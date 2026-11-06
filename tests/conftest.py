@@ -96,6 +96,9 @@ def _empty_tables():
     try:
         conn.execute(text("SET FOREIGN_KEY_CHECKS=0"))
         for table in (
+            "piggy_statements",
+            "piggy_entries",
+            "piggy_banks",
             "transactions",
             "budget_alerts",
             "monthly_budgets",
