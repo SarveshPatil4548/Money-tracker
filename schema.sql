@@ -207,6 +207,102 @@ CREATE TABLE IF NOT EXISTS category_deletions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------------------
+-- piggy_banks (separate savings pot; never part of income/expense totals)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS piggy_banks (
+    id              INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    user_id         INT UNSIGNED  NULL,
+    name            VARCHAR(120)  NOT NULL DEFAULT 'Our Piggy Bank',
+    daily_amount    DECIMAL(12,2) NOT NULL DEFAULT 50.00,
+    contributor_me  VARCHAR(80)   NOT NULL DEFAULT 'Me',
+    contributor_her VARCHAR(80)   NOT NULL DEFAULT 'Her',
+    currency        CHAR(3)       NOT NULL DEFAULT 'INR',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                  ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at      DATETIME      NULL,
+    PRIMARY KEY (id),
+    KEY idx_piggy_banks_user_id (user_id),
+    KEY idx_piggy_banks_deleted_at (deleted_at),
+    CONSTRAINT fk_piggy_banks_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT chk_piggy_banks_daily_amount CHECK (daily_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------------------
+-- piggy_entries (deposits and withdrawals; soft delete only)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS piggy_entries (
+    id             INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    piggy_bank_id  INT UNSIGNED  NOT NULL,
+    user_id        INT UNSIGNED  NULL,
+    contributor    VARCHAR(8)    NOT NULL,
+    entry_type     VARCHAR(16)   NOT NULL,
+    amount         DECIMAL(12,2) NOT NULL,
+    entry_date     DATE          NOT NULL,
+    note           VARCHAR(255)  NULL,
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                 ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at     DATETIME      NULL,
+    PRIMARY KEY (id),
+    KEY idx_piggy_entries_bank_id (piggy_bank_id),
+    KEY idx_piggy_entries_entry_date (entry_date),
+    KEY idx_piggy_entries_bank_date (piggy_bank_id, entry_date),
+    KEY idx_piggy_entries_contributor_date (contributor, entry_date),
+    KEY idx_piggy_entries_deleted_at (deleted_at),
+    CONSTRAINT fk_piggy_entries_bank FOREIGN KEY (piggy_bank_id)
+        REFERENCES piggy_banks (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_piggy_entries_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT chk_piggy_entries_amount CHECK (amount > 0),
+    CONSTRAINT chk_piggy_entries_contributor CHECK (
+        contributor IN ('me', 'her')
+    ),
+    CONSTRAINT chk_piggy_entries_type CHECK (
+        entry_type IN ('deposit', 'withdrawal')
+    )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------------------
+-- piggy_statements (generated PDFs + sha256 for integrity verification)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS piggy_statements (
+    id                INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    piggy_bank_id     INT UNSIGNED  NOT NULL,
+    user_id           INT UNSIGNED  NULL,
+    period_start      DATE          NOT NULL,
+    period_end        DATE          NOT NULL,
+    opening_balance   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    closing_balance   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_deposits    DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    total_withdrawals DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    entry_count       INT           NOT NULL DEFAULT 0,
+    file_name         VARCHAR(255)  NOT NULL,
+    file_path         VARCHAR(512)  NOT NULL,
+    file_sha256       VARCHAR(64)   NOT NULL,
+    generated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at        DATETIME      NULL,
+    PRIMARY KEY (id),
+    KEY idx_piggy_statements_bank_period (piggy_bank_id, period_start, period_end),
+    KEY idx_piggy_statements_hash (file_sha256),
+    KEY idx_piggy_statements_deleted_at (deleted_at),
+    CONSTRAINT fk_piggy_statements_bank FOREIGN KEY (piggy_bank_id)
+        REFERENCES piggy_banks (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_piggy_statements_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT chk_piggy_statements_period CHECK (period_end >= period_start),
+    CONSTRAINT chk_piggy_statements_balances CHECK (
+        opening_balance >= 0 AND closing_balance >= 0
+    ),
+    CONSTRAINT chk_piggy_statements_totals CHECK (
+        total_deposits >= 0 AND total_withdrawals >= 0
+    ),
+    CONSTRAINT chk_piggy_statements_count CHECK (entry_count >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------------------------------------------------------------------------
 -- recurring_rules
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recurring_rules (

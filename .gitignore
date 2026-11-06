@@ -17,3 +17,6 @@ alembic/versions/__pycache__/
 backups/
 *.sql
 !schema.sql
+
+# generated piggy bank PDF statements
+statements/

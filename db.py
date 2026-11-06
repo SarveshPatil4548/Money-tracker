@@ -51,8 +51,38 @@ class CategoryNotFoundError(CategoryActionError):
     """Raised when a category does not exist (or is no longer active)."""
 
 
+class PiggyError(RuntimeError):
+    """Base class for piggy-bank validation and action failures."""
+
+
+class PiggyNotFoundError(PiggyError):
+    """Raised when a piggy bank or entry does not exist (or was deleted)."""
+
+
+class PiggyValidationError(PiggyError):
+    """Raised when piggy-bank input is missing or invalid."""
+
+
+class PiggyBalanceError(PiggyValidationError):
+    """Raised when a withdrawal would take the piggy bank below zero."""
+
+
+class DuplicatePiggyDepositError(PiggyError):
+    """Raised when a contributor already deposited on that date."""
+
+
 #: Longest category name the UI and the server will accept.
 CATEGORY_NAME_MAX = 40
+
+#: Piggy-bank defaults. Money is always DECIMAL(12,2).
+PIGGY_DAILY_DEFAULT = Decimal("50.00")
+PIGGY_MAX_AMOUNT = Decimal("1000000000.00")
+PIGGY_MIN_AMOUNT = Decimal("0.01")
+PIGGY_NAME_MAX = 120
+PIGGY_CONTRIBUTOR_MAX = 80
+PIGGY_NOTE_MAX = 255
+PIGGY_CONTRIBUTORS = ("me", "her")
+PIGGY_ENTRY_TYPES = ("deposit", "withdrawal")
 
 #: Budget limits are DECIMAL(12,2); keep a sensible ceiling for the UI/server.
 MAX_BUDGET_AMOUNT = Decimal("1000000000.00")
@@ -289,6 +319,137 @@ class CategoryDeletion(db.Model):
     )
 
 
+class PiggyBank(db.Model):
+    """One shared piggy bank with editable contributor names.
+
+    The piggy bank is deliberately separate from transactions, budgets and the
+    dashboard totals: nothing in the normal money tracker reads these rows.
+    """
+
+    __tablename__ = "piggy_banks"
+
+    id = db.Column(Integer, primary_key=True)
+    user_id = db.Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    name = db.Column(String(PIGGY_NAME_MAX), nullable=False, default="Our Piggy Bank")
+    daily_amount = db.Column(
+        Numeric(12, 2), nullable=False, default=PIGGY_DAILY_DEFAULT
+    )
+    contributor_me = db.Column(String(PIGGY_CONTRIBUTOR_MAX), nullable=False, default="Me")
+    contributor_her = db.Column(
+        String(PIGGY_CONTRIBUTOR_MAX), nullable=False, default="Her"
+    )
+    currency = db.Column(String(3), nullable=False, default="INR")
+    created_at = db.Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = db.Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    # Soft delete only: the bank and its history always stay in the database.
+    deleted_at = db.Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_piggy_banks_user_id", "user_id"),
+        Index("idx_piggy_banks_deleted_at", "deleted_at"),
+        CheckConstraint("daily_amount > 0", name="chk_piggy_banks_daily_amount"),
+    )
+
+
+class PiggyEntry(db.Model):
+    """A deposit into or a withdrawal from the piggy bank.
+
+    Rows are soft deleted; a withdrawal is rejected when the running balance
+    would become negative at any point.
+    """
+
+    __tablename__ = "piggy_entries"
+
+    id = db.Column(Integer, primary_key=True)
+    piggy_bank_id = db.Column(
+        Integer,
+        ForeignKey(
+            "piggy_banks.id",
+            ondelete="RESTRICT",
+            name="fk_piggy_entries_bank",
+        ),
+        nullable=False,
+    )
+    user_id = db.Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    contributor = db.Column(String(8), nullable=False)
+    entry_type = db.Column(String(16), nullable=False)
+    amount = db.Column(Numeric(12, 2), nullable=False)
+    entry_date = db.Column(Date, nullable=False)
+    note = db.Column(String(PIGGY_NOTE_MAX), nullable=True)
+    created_at = db.Column(DateTime, nullable=False, default=_utcnow)
+    updated_at = db.Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    deleted_at = db.Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_piggy_entries_bank_id", "piggy_bank_id"),
+        Index("idx_piggy_entries_entry_date", "entry_date"),
+        Index("idx_piggy_entries_bank_date", "piggy_bank_id", "entry_date"),
+        Index("idx_piggy_entries_contributor_date", "contributor", "entry_date"),
+        Index("idx_piggy_entries_deleted_at", "deleted_at"),
+        CheckConstraint("amount > 0", name="chk_piggy_entries_amount"),
+        CheckConstraint(
+            "contributor IN ('me', 'her')", name="chk_piggy_entries_contributor"
+        ),
+        CheckConstraint(
+            "entry_type IN ('deposit', 'withdrawal')",
+            name="chk_piggy_entries_type",
+        ),
+    )
+
+    piggy_bank = db.relationship("PiggyBank", foreign_keys=[piggy_bank_id])
+
+
+class PiggyStatement(db.Model):
+    """A generated PDF statement plus its sha256 for integrity checks."""
+
+    __tablename__ = "piggy_statements"
+
+    id = db.Column(Integer, primary_key=True)
+    piggy_bank_id = db.Column(
+        Integer,
+        ForeignKey(
+            "piggy_banks.id",
+            ondelete="RESTRICT",
+            name="fk_piggy_statements_bank",
+        ),
+        nullable=False,
+    )
+    user_id = db.Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    period_start = db.Column(Date, nullable=False)
+    period_end = db.Column(Date, nullable=False)
+    opening_balance = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    closing_balance = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    total_deposits = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    total_withdrawals = db.Column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    entry_count = db.Column(Integer, nullable=False, default=0)
+    file_name = db.Column(String(255), nullable=False)
+    file_path = db.Column(String(512), nullable=False)
+    file_sha256 = db.Column(String(64), nullable=False)
+    generated_at = db.Column(DateTime, nullable=False, default=_utcnow)
+    created_at = db.Column(DateTime, nullable=False, default=_utcnow)
+    deleted_at = db.Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_piggy_statements_bank_period", "piggy_bank_id", "period_start", "period_end"),
+        Index("idx_piggy_statements_hash", "file_sha256"),
+        Index("idx_piggy_statements_deleted_at", "deleted_at"),
+        CheckConstraint(
+            "period_end >= period_start", name="chk_piggy_statements_period"
+        ),
+        CheckConstraint(
+            "opening_balance >= 0 AND closing_balance >= 0",
+            name="chk_piggy_statements_balances",
+        ),
+        CheckConstraint(
+            "total_deposits >= 0 AND total_withdrawals >= 0",
+            name="chk_piggy_statements_totals",
+        ),
+        CheckConstraint("entry_count >= 0", name="chk_piggy_statements_count"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # environment / connection
 # ---------------------------------------------------------------------------
@@ -393,6 +554,16 @@ def _create_missing_tables():
     return []
 
 
+def _table_exists(table_name):
+    return db.session.execute(
+        text(
+            "SELECT COUNT(*) FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t"
+        ),
+        {"t": table_name},
+    ).scalar() > 0
+
+
 def _column_exists(table_name, column_name):
     return db.session.execute(
         text(
@@ -471,6 +642,100 @@ def _budget_category_constraints():
         )
     ).all()
     return [(row[0], row[1]) for row in rows]
+
+
+def _ensure_piggy_schema():
+    """Add any missing piggy-bank columns/indexes to existing tables.
+
+    Brand-new tables are created from the models by _create_missing_tables()
+    before this runs, so there is no data to protect. If an older/partial piggy
+    table exists, a mysqldump is written BEFORE any ALTER is attempted.
+    """
+    column_defs = {
+        "piggy_banks": {
+            "name": "VARCHAR(120) NOT NULL DEFAULT 'Our Piggy Bank'",
+            "daily_amount": "DECIMAL(12,2) NOT NULL DEFAULT 50.00",
+            "contributor_me": "VARCHAR(80) NOT NULL DEFAULT 'Me'",
+            "contributor_her": "VARCHAR(80) NOT NULL DEFAULT 'Her'",
+            "currency": "CHAR(3) NOT NULL DEFAULT 'INR'",
+            "updated_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "deleted_at": "DATETIME NULL",
+        },
+        "piggy_entries": {
+            "piggy_bank_id": "INT NULL",
+            "user_id": "INT NULL",
+            "contributor": "VARCHAR(8) NOT NULL DEFAULT 'me'",
+            "entry_type": "VARCHAR(16) NOT NULL DEFAULT 'deposit'",
+            "amount": "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+            "entry_date": "DATE NULL",
+            "note": "VARCHAR(255) NULL",
+            "updated_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "deleted_at": "DATETIME NULL",
+        },
+        "piggy_statements": {
+            "period_start": "DATE NULL",
+            "period_end": "DATE NULL",
+            "opening_balance": "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+            "closing_balance": "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+            "total_deposits": "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+            "total_withdrawals": "DECIMAL(12,2) NOT NULL DEFAULT 0.00",
+            "entry_count": "INT NOT NULL DEFAULT 0",
+            "file_name": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "file_path": "VARCHAR(512) NOT NULL DEFAULT ''",
+            "file_sha256": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "generated_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "deleted_at": "DATETIME NULL",
+        },
+    }
+    index_defs = {
+        "piggy_banks": {
+            "idx_piggy_banks_user_id": "user_id",
+            "idx_piggy_banks_deleted_at": "deleted_at",
+        },
+        "piggy_entries": {
+            "idx_piggy_entries_bank_id": "piggy_bank_id",
+            "idx_piggy_entries_entry_date": "entry_date",
+            "idx_piggy_entries_bank_date": "piggy_bank_id, entry_date",
+            "idx_piggy_entries_contributor_date": "contributor, entry_date",
+            "idx_piggy_entries_deleted_at": "deleted_at",
+        },
+        "piggy_statements": {
+            "idx_piggy_statements_bank_period": "piggy_bank_id, period_start, period_end",
+            "idx_piggy_statements_hash": "file_sha256",
+            "idx_piggy_statements_deleted_at": "deleted_at",
+        },
+    }
+
+    missing_columns = []
+    missing_indexes = []
+    for table, columns in column_defs.items():
+        if not _table_exists(table):
+            continue
+        for column in columns:
+            if not _column_exists(table, column):
+                missing_columns.append((table, column))
+        for index_name, columns_sql in index_defs[table].items():
+            if not _index_exists(table, index_name):
+                missing_indexes.append((table, index_name, columns_sql))
+
+    if not missing_columns and not missing_indexes:
+        return []
+
+    if not testing_enabled():
+        _backup_before_schema_upgrade()
+
+    applied = []
+    for table, column in missing_columns:
+        db.session.execute(
+            text(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {column_defs[table][column]}")
+        )
+        applied.append(f"{table}.{column}")
+    for table, index_name, columns_sql in missing_indexes:
+        db.session.execute(
+            text(f"ALTER TABLE `{table}` ADD INDEX `{index_name}` ({columns_sql})")
+        )
+        applied.append(f"{table}.{index_name}")
+    return applied
 
 
 def _ensure_schema():
@@ -630,6 +895,8 @@ def _ensure_schema():
             )
         )
         applied.append("budgets.fk_budgets_category (RESTRICT)")
+
+    applied.extend(_ensure_piggy_schema())
 
     if applied:
         db.session.commit()
@@ -2314,13 +2581,810 @@ def dismiss_all_alerts():
     return len(rows)
 
 
+# ---------------------------------------------------------------------------
+# piggy bank
+# ---------------------------------------------------------------------------
+
+def _clean_piggy_amount(value, field="Amount"):
+    try:
+        amount = _q2(Decimal(str(value)))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise PiggyValidationError(f"Enter a valid {field.lower()}.") from exc
+    if amount < PIGGY_MIN_AMOUNT:
+        raise PiggyValidationError(f"{field} must be greater than 0.")
+    if amount > PIGGY_MAX_AMOUNT:
+        raise PiggyValidationError(f"{field} must be {PIGGY_MAX_AMOUNT:,.2f} or less.")
+    return amount
+
+
+def _clean_piggy_name(value, field, max_length=PIGGY_NAME_MAX):
+    clean = " ".join(str(value or "").strip().split())
+    if not clean:
+        raise PiggyValidationError(f"Enter a {field.lower()}.")
+    if len(clean) > max_length:
+        raise PiggyValidationError(f"{field} must be {max_length} characters or fewer.")
+    return clean
+
+
+def _clean_piggy_contributor(value):
+    key = str(value or "").strip().lower()
+    if key not in PIGGY_CONTRIBUTORS:
+        raise PiggyValidationError("Choose Me or Her for this entry.")
+    return key
+
+
+def _clean_piggy_entry_type(value):
+    kind = str(value or "").strip().lower()
+    if kind not in PIGGY_ENTRY_TYPES:
+        raise PiggyValidationError("Choose deposit or withdrawal.")
+    return kind
+
+
+def _clean_piggy_date(value):
+    if value is None or value == "":
+        return date.today()
+    try:
+        return _as_date(value)
+    except (TypeError, ValueError) as exc:
+        raise PiggyValidationError("Date must be a valid calendar date.") from exc
+
+
+def _clean_piggy_note(value):
+    clean = str(value or "").strip()
+    if len(clean) > PIGGY_NOTE_MAX:
+        raise PiggyValidationError(
+            f"Note must be {PIGGY_NOTE_MAX} characters or fewer."
+        )
+    return clean
+
+
+def _piggy_bank_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise PiggyNotFoundError("That piggy bank does not exist.") from exc
+
+
+def serialize_piggy_bank(row):
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "daily_amount": str(row.daily_amount),
+        "contributor_me": row.contributor_me,
+        "contributor_her": row.contributor_her,
+        "currency": row.currency,
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+    }
+
+
+def _piggy_contributor_name(bank, key):
+    if bank is None:
+        return "Me" if key == "me" else "Her"
+    return bank.contributor_me if key == "me" else bank.contributor_her
+
+
+def serialize_piggy_entry(row, bank=None):
+    amount = _q2(row.amount)
+    signed = amount if row.entry_type == "deposit" else -amount
+    return {
+        "id": str(row.id),
+        "piggy_bank_id": str(row.piggy_bank_id),
+        "contributor": row.contributor,
+        "contributor_name": _piggy_contributor_name(bank, row.contributor),
+        "entry_type": row.entry_type,
+        "amount": str(amount),
+        "signed_amount": str(_q2(signed)),
+        "entry_date": row.entry_date.isoformat(),
+        "note": row.note or "",
+        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "updated_at": row.updated_at.isoformat() if row.updated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+        "is_deleted": row.deleted_at is not None,
+    }
+
+
+def ensure_piggy_bank(create=True):
+    """Return the active piggy bank, creating the default one on first use."""
+    row = db.session.execute(
+        select(PiggyBank)
+        .where(PiggyBank.deleted_at.is_(None))
+        .order_by(PiggyBank.id)
+        .limit(1)
+    ).scalar_one_or_none()
+    if row is None and create:
+        row = PiggyBank(
+            user_id=None,
+            name="Our Piggy Bank",
+            daily_amount=PIGGY_DAILY_DEFAULT,
+            contributor_me="Me",
+            contributor_her="Her",
+            currency="INR",
+        )
+        db.session.add(row)
+        _commit()
+    return row
+
+
+def get_piggy_bank(include_deleted=False):
+    stmt = select(PiggyBank).order_by(PiggyBank.id).limit(1)
+    if not include_deleted:
+        stmt = stmt.where(PiggyBank.deleted_at.is_(None))
+    row = db.session.execute(stmt).scalar_one_or_none()
+    return serialize_piggy_bank(row) if row else None
+
+
+def update_piggy_settings(
+    name=None,
+    daily_amount=None,
+    contributor_me=None,
+    contributor_her=None,
+):
+    row = ensure_piggy_bank()
+    if name is not None:
+        row.name = _clean_piggy_name(name, "Piggy bank name")
+    if daily_amount is not None:
+        row.daily_amount = _clean_piggy_amount(daily_amount, "Daily amount")
+    if contributor_me is not None:
+        row.contributor_me = _clean_piggy_name(
+            contributor_me, "First contributor name", PIGGY_CONTRIBUTOR_MAX
+        )
+    if contributor_her is not None:
+        row.contributor_her = _clean_piggy_name(
+            contributor_her, "Second contributor name", PIGGY_CONTRIBUTOR_MAX
+        )
+    if row.contributor_me.casefold() == row.contributor_her.casefold():
+        raise PiggyValidationError("The two contributor names must be different.")
+    _commit()
+    return serialize_piggy_bank(row)
+
+
+def _live_piggy_entries_stmt(bank_id):
+    return select(PiggyEntry).where(
+        PiggyEntry.piggy_bank_id == int(bank_id),
+        PiggyEntry.deleted_at.is_(None),
+    )
+
+
+def _piggy_sum(bank_id, entry_type, date_from=None, date_to=None):
+    stmt = select(func.coalesce(func.sum(PiggyEntry.amount), 0)).where(
+        PiggyEntry.piggy_bank_id == int(bank_id),
+        PiggyEntry.entry_type == entry_type,
+        PiggyEntry.deleted_at.is_(None),
+    )
+    if date_from is not None:
+        stmt = stmt.where(PiggyEntry.entry_date >= _as_date(date_from))
+    if date_to is not None:
+        stmt = stmt.where(PiggyEntry.entry_date <= _as_date(date_to))
+    return _q2(db.session.execute(stmt).scalar())
+
+
+def piggy_balance(bank_id=None, as_of=None):
+    """All-time deposits minus withdrawals (optionally as of a date)."""
+    if bank_id is None:
+        bank = ensure_piggy_bank()
+        bank_id = bank.id
+    deposits = _piggy_sum(bank_id, "deposit", date_to=as_of)
+    withdrawals = _piggy_sum(bank_id, "withdrawal", date_to=as_of)
+    return _q2(deposits - withdrawals)
+
+
+def _piggy_filtered_stmt(
+    bank_id,
+    month=None,
+    date_from=None,
+    date_to=None,
+    contributor=None,
+    entry_type=None,
+    include_deleted=False,
+):
+    stmt = select(PiggyEntry).where(PiggyEntry.piggy_bank_id == int(bank_id))
+    if not include_deleted:
+        stmt = stmt.where(PiggyEntry.deleted_at.is_(None))
+    if month not in (None, ""):
+        start = month_start(month)
+        stmt = stmt.where(
+            PiggyEntry.entry_date >= start,
+            PiggyEntry.entry_date < next_month_start(start),
+        )
+    if date_from not in (None, ""):
+        stmt = stmt.where(PiggyEntry.entry_date >= _as_date(date_from))
+    if date_to not in (None, ""):
+        stmt = stmt.where(PiggyEntry.entry_date <= _as_date(date_to))
+    if contributor not in (None, "", "all"):
+        stmt = stmt.where(PiggyEntry.contributor == _clean_piggy_contributor(contributor))
+    if entry_type not in (None, "", "all"):
+        stmt = stmt.where(PiggyEntry.entry_type == _clean_piggy_entry_type(entry_type))
+    return stmt
+
+
+def list_piggy_entries(
+    month=None,
+    date_from=None,
+    date_to=None,
+    contributor=None,
+    entry_type=None,
+    include_deleted=False,
+    newest_first=True,
+    limit=None,
+):
+    bank = ensure_piggy_bank()
+    stmt = _piggy_filtered_stmt(
+        bank.id,
+        month=month,
+        date_from=date_from,
+        date_to=date_to,
+        contributor=contributor,
+        entry_type=entry_type,
+        include_deleted=include_deleted,
+    )
+    if newest_first:
+        stmt = stmt.order_by(PiggyEntry.entry_date.desc(), PiggyEntry.id.desc())
+    else:
+        stmt = stmt.order_by(PiggyEntry.entry_date.asc(), PiggyEntry.id.asc())
+    if limit:
+        stmt = stmt.limit(int(limit))
+    rows = db.session.execute(stmt).scalars().all()
+    return [serialize_piggy_entry(row, bank) for row in rows]
+
+
+def get_piggy_entry(entry_id, include_deleted=False):
+    try:
+        eid = int(entry_id)
+    except (TypeError, ValueError):
+        return None
+    row = db.session.get(PiggyEntry, eid)
+    if row is None:
+        return None
+    if not include_deleted and row.deleted_at is not None:
+        return None
+    bank = db.session.get(PiggyBank, row.piggy_bank_id)
+    return serialize_piggy_entry(row, bank)
+
+
+def _duplicate_deposit(
+    bank_id, contributor, entry_date, exclude_entry_id=None
+):
+    stmt = select(PiggyEntry.id).where(
+        PiggyEntry.piggy_bank_id == int(bank_id),
+        PiggyEntry.contributor == contributor,
+        PiggyEntry.entry_type == "deposit",
+        PiggyEntry.entry_date == entry_date,
+        PiggyEntry.deleted_at.is_(None),
+    )
+    if exclude_entry_id is not None:
+        stmt = stmt.where(PiggyEntry.id != int(exclude_entry_id))
+    return db.session.execute(stmt.limit(1)).scalar_one_or_none() is not None
+
+
+def _assert_withdrawal_allowed(
+    bank_id, entry_date, amount, exclude_entry_id=None
+):
+    """Simulate every live entry plus this withdrawal and reject a negative."""
+    stmt = select(
+        PiggyEntry.id,
+        PiggyEntry.entry_date,
+        PiggyEntry.entry_type,
+        PiggyEntry.amount,
+    ).where(
+        PiggyEntry.piggy_bank_id == int(bank_id),
+        PiggyEntry.deleted_at.is_(None),
+    )
+    if exclude_entry_id is not None:
+        stmt = stmt.where(PiggyEntry.id != int(exclude_entry_id))
+    rows = db.session.execute(stmt).all()
+    items = [
+        (row.entry_date, int(row.id), row.entry_type, _q2(row.amount))
+        for row in rows
+    ]
+    next_id = max((item[1] for item in items), default=0) + 1
+    items.append((entry_date, next_id, "withdrawal", _q2(amount)))
+    items.sort(key=lambda item: (item[0], item[1]))
+
+    balance = Decimal("0.00")
+    for when, _entry_id, kind, value in items:
+        balance += value if kind == "deposit" else -value
+        if balance < 0:
+            raise PiggyBalanceError(
+                "That withdrawal would take the piggy bank below zero on "
+                f"{when.strftime('%d %b %Y')}. Withdraw less or add a deposit first."
+            )
+
+
+def add_piggy_entry(
+    contributor,
+    entry_type,
+    amount,
+    entry_date=None,
+    note="",
+    allow_duplicate=False,
+):
+    bank = ensure_piggy_bank()
+    contributor_key = _clean_piggy_contributor(contributor)
+    kind = _clean_piggy_entry_type(entry_type)
+    value = _clean_piggy_amount(amount)
+    when = _clean_piggy_date(entry_date)
+    clean_note = _clean_piggy_note(note)
+
+    if kind == "deposit" and not allow_duplicate:
+        if _duplicate_deposit(bank.id, contributor_key, when):
+            raise DuplicatePiggyDepositError(
+                f"{_piggy_contributor_name(bank, contributor_key)} already has a "
+                f"deposit on {when.strftime('%d %b %Y')}. Add another anyway?"
+            )
+    if kind == "withdrawal":
+        _assert_withdrawal_allowed(bank.id, when, value)
+
+    row = PiggyEntry(
+        piggy_bank_id=bank.id,
+        user_id=None,
+        contributor=contributor_key,
+        entry_type=kind,
+        amount=value,
+        entry_date=when,
+        note=clean_note,
+    )
+    db.session.add(row)
+    _commit()
+    return serialize_piggy_entry(row, bank)
+
+
+def update_piggy_entry(
+    entry_id,
+    contributor=None,
+    entry_type=None,
+    amount=None,
+    entry_date=None,
+    note=None,
+    allow_duplicate=False,
+):
+    try:
+        eid = int(entry_id)
+    except (TypeError, ValueError) as exc:
+        raise PiggyNotFoundError("That piggy-bank entry does not exist.") from exc
+    row = db.session.execute(
+        select(PiggyEntry).where(PiggyEntry.id == eid).with_for_update()
+    ).scalar_one_or_none()
+    if row is None or row.deleted_at is not None:
+        raise PiggyNotFoundError("That piggy-bank entry does not exist.")
+
+    bank = db.session.get(PiggyBank, row.piggy_bank_id)
+    contributor_key = (
+        row.contributor
+        if contributor is None
+        else _clean_piggy_contributor(contributor)
+    )
+    kind = row.entry_type if entry_type is None else _clean_piggy_entry_type(entry_type)
+    value = _q2(row.amount) if amount is None else _clean_piggy_amount(amount)
+    when = row.entry_date if entry_date in (None, "") else _clean_piggy_date(entry_date)
+    clean_note = row.note or "" if note is None else _clean_piggy_note(note)
+
+    if kind == "deposit" and not allow_duplicate:
+        if _duplicate_deposit(bank.id, contributor_key, when, exclude_entry_id=eid):
+            raise DuplicatePiggyDepositError(
+                f"{_piggy_contributor_name(bank, contributor_key)} already has a "
+                f"deposit on {when.strftime('%d %b %Y')}."
+            )
+    if kind == "withdrawal":
+        _assert_withdrawal_allowed(bank.id, when, value, exclude_entry_id=eid)
+
+    row.contributor = contributor_key
+    row.entry_type = kind
+    row.amount = value
+    row.entry_date = when
+    row.note = clean_note
+    _commit()
+    return serialize_piggy_entry(row, bank)
+
+
+def delete_piggy_entry(entry_id):
+    """SOFT delete: the row stays and can be undone."""
+    try:
+        eid = int(entry_id)
+    except (TypeError, ValueError):
+        return False
+    row = db.session.execute(
+        select(PiggyEntry).where(PiggyEntry.id == eid).with_for_update()
+    ).scalar_one_or_none()
+    if row is None or row.deleted_at is not None:
+        return False
+    row.deleted_at = _utcnow()
+    _commit()
+    return True
+
+
+def undo_delete_piggy_entry(entry_id):
+    try:
+        eid = int(entry_id)
+    except (TypeError, ValueError):
+        return False
+    row = db.session.execute(
+        select(PiggyEntry).where(PiggyEntry.id == eid).with_for_update()
+    ).scalar_one_or_none()
+    if row is None or row.deleted_at is None:
+        return False
+    if row.entry_type == "withdrawal":
+        _assert_withdrawal_allowed(
+            row.piggy_bank_id, row.entry_date, row.amount, exclude_entry_id=eid
+        )
+    row.deleted_at = None
+    _commit()
+    return True
+
+
+def list_deleted_piggy_entries(limit=50):
+    bank = ensure_piggy_bank()
+    rows = db.session.execute(
+        select(PiggyEntry)
+        .where(
+            PiggyEntry.piggy_bank_id == bank.id,
+            PiggyEntry.deleted_at.isnot(None),
+        )
+        .order_by(PiggyEntry.deleted_at.desc(), PiggyEntry.id.desc())
+        .limit(int(limit))
+    ).scalars().all()
+    return [serialize_piggy_entry(row, bank) for row in rows]
+
+
+def _piggy_month_entries(bank_id, start, end, include_deleted=False):
+    stmt = select(PiggyEntry).where(
+        PiggyEntry.piggy_bank_id == int(bank_id),
+        PiggyEntry.entry_date >= start,
+        PiggyEntry.entry_date < end,
+    )
+    if not include_deleted:
+        stmt = stmt.where(PiggyEntry.deleted_at.is_(None))
+    stmt = stmt.order_by(PiggyEntry.entry_date.asc(), PiggyEntry.id.asc())
+    return db.session.execute(stmt).scalars().all()
+
+
+def piggy_summary(month=None):
+    """Everything the piggy page needs for one month, isolated from the rest."""
+    bank = ensure_piggy_bank()
+    start = month_start(month)
+    end = next_month_start(start)
+    days_in_month = (end - start).days
+
+    all_rows = db.session.execute(
+        _live_piggy_entries_stmt(bank.id).order_by(
+            PiggyEntry.entry_date.asc(), PiggyEntry.id.asc()
+        )
+    ).scalars().all()
+
+    total_deposits = Decimal("0.00")
+    total_withdrawals = Decimal("0.00")
+    opening = Decimal("0.00")
+    month_deposits = Decimal("0.00")
+    month_withdrawals = Decimal("0.00")
+    contributor_totals = {
+        key: {
+            "key": key,
+            "name": _piggy_contributor_name(bank, key),
+            "deposits": Decimal("0.00"),
+            "withdrawals": Decimal("0.00"),
+            "count": 0,
+            "month_deposits": Decimal("0.00"),
+            "month_withdrawals": Decimal("0.00"),
+            "month_count": 0,
+        }
+        for key in PIGGY_CONTRIBUTORS
+    }
+    entry_serialized = []
+
+    for row in all_rows:
+        amount = _q2(row.amount)
+        in_month = start <= row.entry_date < end
+        if row.entry_date < start:
+            opening += amount if row.entry_type == "deposit" else -amount
+        if row.entry_type == "deposit":
+            total_deposits += amount
+            if in_month:
+                month_deposits += amount
+        else:
+            total_withdrawals += amount
+            if in_month:
+                month_withdrawals += amount
+        bucket = contributor_totals[row.contributor]
+        if row.entry_type == "deposit":
+            bucket["deposits"] += amount
+            if in_month:
+                bucket["month_deposits"] += amount
+        else:
+            bucket["withdrawals"] += amount
+            if in_month:
+                bucket["month_withdrawals"] += amount
+        bucket["count"] += 1
+        if in_month:
+            bucket["month_count"] += 1
+            entry_serialized.append(serialize_piggy_entry(row, bank))
+
+    opening = _q2(opening)
+    total_deposits = _q2(total_deposits)
+    total_withdrawals = _q2(total_withdrawals)
+    month_deposits = _q2(month_deposits)
+    month_withdrawals = _q2(month_withdrawals)
+    closing = _q2(opening + month_deposits - month_withdrawals)
+
+    by_date = {}
+    for entry in entry_serialized:
+        by_date.setdefault(entry["entry_date"], []).append(entry)
+
+    running = opening
+    days = []
+    for day_number in range(1, days_in_month + 1):
+        when = date(start.year, start.month, day_number)
+        key = when.isoformat()
+        day_entries = by_date.get(key, [])
+        dep = sum(
+            (Decimal(e["amount"]) for e in day_entries if e["entry_type"] == "deposit"),
+            Decimal("0.00"),
+        )
+        wd = sum(
+            (
+                Decimal(e["amount"])
+                for e in day_entries
+                if e["entry_type"] == "withdrawal"
+            ),
+            Decimal("0.00"),
+        )
+        running = _q2(running + dep - wd)
+        days.append(
+            {
+                "date": key,
+                "day": day_number,
+                "weekday": when.weekday(),
+                "is_today": when == date.today(),
+                "is_future": when > date.today(),
+                "deposits": str(_q2(dep)),
+                "withdrawals": str(_q2(wd)),
+                "net": str(_q2(dep - wd)),
+                "balance": str(running),
+                "entry_count": len(day_entries),
+                "entries": day_entries,
+            }
+        )
+
+    first_weekday = start.weekday()
+    padded = [None] * first_weekday + days
+    while len(padded) % 7:
+        padded.append(None)
+    weeks = [padded[i:i + 7] for i in range(0, len(padded), 7)]
+
+    contributors = []
+    for key in PIGGY_CONTRIBUTORS:
+        row = contributor_totals[key]
+        row["balance"] = _q2(row["deposits"] - row["withdrawals"])
+        row["month_net"] = _q2(row["month_deposits"] - row["month_withdrawals"])
+        contributors.append(row)
+
+    today = date.today()
+    days_elapsed = (
+        today.day
+        if start == today.replace(day=1)
+        else (days_in_month if start < today.replace(day=1) else 0)
+    )
+    expected_to_date = _q2(bank.daily_amount * days_elapsed * len(PIGGY_CONTRIBUTORS))
+    recent = [serialize_piggy_entry(row, bank) for row in reversed(all_rows[-10:])]
+
+    return {
+        "bank": serialize_piggy_bank(bank),
+        "month": start.isoformat(),
+        "month_value": month_key(start),
+        "month_label": start.strftime("%B %Y"),
+        "previous_month": month_key(previous_month_start(start)),
+        "next_month": month_key(next_month_start(start)),
+        "is_current_month": start == today.replace(day=1),
+        "days_in_month": days_in_month,
+        "days_elapsed": days_elapsed,
+        "opening_balance": str(opening),
+        "closing_balance": str(closing),
+        "total_deposits": str(total_deposits),
+        "total_withdrawals": str(total_withdrawals),
+        "balance": str(_q2(total_deposits - total_withdrawals)),
+        "month_deposits": str(month_deposits),
+        "month_withdrawals": str(month_withdrawals),
+        "month_net": str(_q2(month_deposits - month_withdrawals)),
+        "month_entry_count": len(entry_serialized),
+        "entries": entry_serialized,
+        "recent": recent,
+        "days": days,
+        "weeks": weeks,
+        "contributors": contributors,
+        "daily_amount": str(_q2(bank.daily_amount)),
+        "expected_to_date": str(expected_to_date),
+        "saved_to_date": str(_q2(month_deposits - month_withdrawals)),
+    }
+
+
+def piggy_month_series(end_month=None, months=6):
+    """Deposits/withdrawals/balance for the last N months, oldest first."""
+    bank = ensure_piggy_bank()
+    start_month = month_start(end_month)
+    keys = [start_month]
+    for _ in range(max(int(months), 1) - 1):
+        keys.append(previous_month_start(keys[-1]))
+    keys.reverse()
+
+    rows = db.session.execute(
+        _live_piggy_entries_stmt(bank.id).order_by(
+            PiggyEntry.entry_date.asc(), PiggyEntry.id.asc()
+        )
+    ).scalars().all()
+
+    series = []
+    for index, first in enumerate(keys):
+        end = next_month_start(first)
+        dep = Decimal("0.00")
+        wd = Decimal("0.00")
+        for row in rows:
+            if first <= row.entry_date < end:
+                if row.entry_type == "deposit":
+                    dep += _q2(row.amount)
+                else:
+                    wd += _q2(row.amount)
+        balance = Decimal("0.00")
+        for row in rows:
+            if row.entry_date < end:
+                balance += _q2(row.amount) if row.entry_type == "deposit" else -_q2(row.amount)
+        series.append(
+            {
+                "month_key": month_key(first),
+                "label": first.strftime("%b"),
+                "label_long": first.strftime("%B %Y"),
+                "deposits": float(_q2(dep)),
+                "withdrawals": float(_q2(wd)),
+                "net": float(_q2(dep - wd)),
+                "balance": float(_q2(balance)),
+            }
+        )
+    return series
+
+
+def piggy_overview():
+    """Small read-only snapshot for the dashboard banner."""
+    bank = ensure_piggy_bank()
+    balance = piggy_balance(bank.id)
+    start = month_start()
+    end = next_month_start(start)
+    contributors = []
+    for key in PIGGY_CONTRIBUTORS:
+        deposits = _q2(
+            db.session.execute(
+                select(func.coalesce(func.sum(PiggyEntry.amount), 0)).where(
+                    PiggyEntry.piggy_bank_id == bank.id,
+                    PiggyEntry.contributor == key,
+                    PiggyEntry.entry_type == "deposit",
+                    PiggyEntry.deleted_at.is_(None),
+                )
+            ).scalar()
+        )
+        withdrawals = _q2(
+            db.session.execute(
+                select(func.coalesce(func.sum(PiggyEntry.amount), 0)).where(
+                    PiggyEntry.piggy_bank_id == bank.id,
+                    PiggyEntry.contributor == key,
+                    PiggyEntry.entry_type == "withdrawal",
+                    PiggyEntry.deleted_at.is_(None),
+                )
+            ).scalar()
+        )
+        contributors.append(
+            {
+                "key": key,
+                "name": _piggy_contributor_name(bank, key),
+                "balance": str(_q2(deposits - withdrawals)),
+            }
+        )
+    return {
+        "bank": serialize_piggy_bank(bank),
+        "balance": str(balance),
+        "month_deposits": str(_piggy_sum(bank.id, "deposit", start, end)),
+        "month_withdrawals": str(_piggy_sum(bank.id, "withdrawal", start, end)),
+        "contributors": contributors,
+    }
+
+
+def serialize_piggy_statement(row):
+    return {
+        "id": str(row.id),
+        "piggy_bank_id": str(row.piggy_bank_id),
+        "period_start": row.period_start.isoformat() if row.period_start else "",
+        "period_end": row.period_end.isoformat() if row.period_end else "",
+        "opening_balance": str(_q2(row.opening_balance)),
+        "closing_balance": str(_q2(row.closing_balance)),
+        "total_deposits": str(_q2(row.total_deposits)),
+        "total_withdrawals": str(_q2(row.total_withdrawals)),
+        "entry_count": int(row.entry_count or 0),
+        "file_name": row.file_name or "",
+        "file_path": row.file_path or "",
+        "file_sha256": row.file_sha256 or "",
+        "generated_at": row.generated_at.isoformat() if row.generated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+    }
+
+
+def save_piggy_statement(
+    period_start,
+    period_end,
+    opening_balance,
+    closing_balance,
+    total_deposits,
+    total_withdrawals,
+    entry_count,
+    file_name,
+    file_path,
+    file_sha256,
+):
+    """Record a generated PDF statement and the hash of its bytes."""
+    bank = ensure_piggy_bank()
+    first = _as_date(period_start)
+    last = _as_date(period_end)
+    row = PiggyStatement(
+        piggy_bank_id=bank.id,
+        user_id=None,
+        period_start=first,
+        period_end=last,
+        opening_balance=_q2(opening_balance),
+        closing_balance=_q2(closing_balance),
+        total_deposits=_q2(total_deposits),
+        total_withdrawals=_q2(total_withdrawals),
+        entry_count=int(entry_count or 0),
+        file_name=str(file_name)[:255],
+        file_path=str(file_path)[:512],
+        file_sha256=str(file_sha256)[:64],
+    )
+    db.session.add(row)
+    _commit()
+    return serialize_piggy_statement(row)
+
+
+def list_piggy_statements(limit=10):
+    bank = ensure_piggy_bank()
+    stmt = (
+        select(PiggyStatement)
+        .where(
+            PiggyStatement.piggy_bank_id == bank.id,
+            PiggyStatement.deleted_at.is_(None),
+        )
+        .order_by(PiggyStatement.generated_at.desc(), PiggyStatement.id.desc())
+    )
+    if limit:
+        stmt = stmt.limit(int(limit))
+    rows = db.session.execute(stmt).scalars().all()
+    return [serialize_piggy_statement(row) for row in rows]
+
+
+def get_piggy_statement(statement_id, include_deleted=False):
+    try:
+        sid = int(statement_id)
+    except (TypeError, ValueError):
+        return None
+    row = db.session.get(PiggyStatement, sid)
+    if row is None:
+        return None
+    if not include_deleted and row.deleted_at is not None:
+        return None
+    return serialize_piggy_statement(row)
+
+
 __all__ = [
     "DatabaseUnavailable",
     "DuplicateKeyError",
     "SaveError",
     "CategoryActionError",
     "CategoryNotFoundError",
+    "PiggyError",
+    "PiggyNotFoundError",
+    "PiggyValidationError",
+    "PiggyBalanceError",
+    "DuplicatePiggyDepositError",
     "CATEGORY_NAME_MAX",
+    "PIGGY_DAILY_DEFAULT",
+    "PIGGY_MAX_AMOUNT",
+    "PIGGY_MIN_AMOUNT",
+    "PIGGY_CONTRIBUTORS",
+    "PIGGY_ENTRY_TYPES",
     "db",
     "User",
     "Category",
@@ -2329,6 +3393,9 @@ __all__ = [
     "MonthlyBudget",
     "BudgetAlert",
     "CategoryDeletion",
+    "PiggyBank",
+    "PiggyEntry",
+    "PiggyStatement",
     "init_db",
     "ping",
     "testing_enabled",
@@ -2383,4 +3450,24 @@ __all__ = [
     "list_alerts",
     "dismiss_alert",
     "dismiss_all_alerts",
+    "serialize_piggy_bank",
+    "serialize_piggy_entry",
+    "ensure_piggy_bank",
+    "get_piggy_bank",
+    "update_piggy_settings",
+    "list_piggy_entries",
+    "get_piggy_entry",
+    "add_piggy_entry",
+    "update_piggy_entry",
+    "delete_piggy_entry",
+    "undo_delete_piggy_entry",
+    "list_deleted_piggy_entries",
+    "piggy_balance",
+    "piggy_summary",
+    "piggy_month_series",
+    "piggy_overview",
+    "serialize_piggy_statement",
+    "save_piggy_statement",
+    "list_piggy_statements",
+    "get_piggy_statement",
 ]
