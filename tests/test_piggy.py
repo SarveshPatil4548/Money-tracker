@@ -124,6 +124,58 @@ def test_piggy_does_not_change_dashboard_totals(app):
     assert _balance() == app_db.Decimal("900.00")
 
 
+def test_statement_helpers_record_and_read_back(app):
+    app_db.save_piggy_statement(
+        period_start="2026-10-01",
+        period_end="2026-10-31",
+        opening_balance="0.00",
+        closing_balance="100.00",
+        total_deposits="150.00",
+        total_withdrawals="50.00",
+        entry_count=3,
+        file_name="piggy_statement_2026-10_test.pdf",
+        file_path="piggy_statement_2026-10_test.pdf",
+        file_sha256="a" * 64,
+    )
+
+    items = app_db.list_piggy_statements()
+    assert len(items) == 1
+    row = app_db.get_piggy_statement(items[0]["id"])
+    assert row["period_start"] == "2026-10-01"
+    assert row["closing_balance"] == "100.00"
+    assert row["entry_count"] == 3
+    assert app_db.get_piggy_statement("not-an-id") is None
+
+
+def test_pdf_statement_download_and_verify(app, client):
+    import app as flask_app_module
+
+    app_db.add_piggy_entry("me", "deposit", "50.00", "2026-10-01")
+    app_db.add_piggy_entry("her", "deposit", "50.00", "2026-10-02")
+
+    response = client.get("/piggy/statement.pdf?month=2026-10")
+    assert response.status_code == 200
+    assert response.data.startswith(b"%PDF-")
+    assert "attachment" in response.headers["Content-Disposition"]
+
+    statements = app_db.list_piggy_statements()
+    assert len(statements) == 1
+    statement_id = statements[0]["id"]
+
+    try:
+        verify = client.get(f"/piggy/statements/{statement_id}/verify")
+        assert verify.status_code == 200
+        assert verify.get_json()["matches"] is True
+
+        download = client.get(f"/piggy/statements/{statement_id}/download")
+        assert download.status_code == 200
+        assert download.data.startswith(b"%PDF-")
+    finally:
+        path = flask_app_module._statement_path(statements[0]["file_path"])
+        if path is not None:
+            path.unlink(missing_ok=True)
+
+
 def test_summary_and_calendar_for_month(app):
     app_db.add_piggy_entry("me", "deposit", "50.00", "2026-09-30")
     app_db.add_piggy_entry("me", "deposit", "50.00", "2026-10-01")

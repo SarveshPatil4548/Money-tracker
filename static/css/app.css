@@ -1409,3 +1409,21 @@ body.modal-open { overflow: hidden; }
   border-color: var(--accent-soft-border);
 }
 .piggy-banner .alert-icon { color: var(--accent); }
+
+.piggy-statements-card { margin-top: var(--space-4); }
+.piggy-statement-actions { opacity: 1; }
+
+@media print {
+  .topbar,
+  .sidebar,
+  .bottomnav,
+  .page-head .actions,
+  .flash-stack,
+  .piggy-toolbar,
+  .piggy-statements-card,
+  .txn-actions,
+  .piggy-calendar-hint { display: none !important; }
+  .app { display: block; }
+  .main { margin: 0; padding: 0; }
+  .card { box-shadow: none; break-inside: avoid; }
+}

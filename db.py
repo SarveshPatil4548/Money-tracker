@@ -3285,6 +3285,89 @@ def piggy_overview():
     }
 
 
+def serialize_piggy_statement(row):
+    return {
+        "id": str(row.id),
+        "piggy_bank_id": str(row.piggy_bank_id),
+        "period_start": row.period_start.isoformat() if row.period_start else "",
+        "period_end": row.period_end.isoformat() if row.period_end else "",
+        "opening_balance": str(_q2(row.opening_balance)),
+        "closing_balance": str(_q2(row.closing_balance)),
+        "total_deposits": str(_q2(row.total_deposits)),
+        "total_withdrawals": str(_q2(row.total_withdrawals)),
+        "entry_count": int(row.entry_count or 0),
+        "file_name": row.file_name or "",
+        "file_path": row.file_path or "",
+        "file_sha256": row.file_sha256 or "",
+        "generated_at": row.generated_at.isoformat() if row.generated_at else "",
+        "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
+    }
+
+
+def save_piggy_statement(
+    period_start,
+    period_end,
+    opening_balance,
+    closing_balance,
+    total_deposits,
+    total_withdrawals,
+    entry_count,
+    file_name,
+    file_path,
+    file_sha256,
+):
+    """Record a generated PDF statement and the hash of its bytes."""
+    bank = ensure_piggy_bank()
+    first = _as_date(period_start)
+    last = _as_date(period_end)
+    row = PiggyStatement(
+        piggy_bank_id=bank.id,
+        user_id=None,
+        period_start=first,
+        period_end=last,
+        opening_balance=_q2(opening_balance),
+        closing_balance=_q2(closing_balance),
+        total_deposits=_q2(total_deposits),
+        total_withdrawals=_q2(total_withdrawals),
+        entry_count=int(entry_count or 0),
+        file_name=str(file_name)[:255],
+        file_path=str(file_path)[:512],
+        file_sha256=str(file_sha256)[:64],
+    )
+    db.session.add(row)
+    _commit()
+    return serialize_piggy_statement(row)
+
+
+def list_piggy_statements(limit=10):
+    bank = ensure_piggy_bank()
+    stmt = (
+        select(PiggyStatement)
+        .where(
+            PiggyStatement.piggy_bank_id == bank.id,
+            PiggyStatement.deleted_at.is_(None),
+        )
+        .order_by(PiggyStatement.generated_at.desc(), PiggyStatement.id.desc())
+    )
+    if limit:
+        stmt = stmt.limit(int(limit))
+    rows = db.session.execute(stmt).scalars().all()
+    return [serialize_piggy_statement(row) for row in rows]
+
+
+def get_piggy_statement(statement_id, include_deleted=False):
+    try:
+        sid = int(statement_id)
+    except (TypeError, ValueError):
+        return None
+    row = db.session.get(PiggyStatement, sid)
+    if row is None:
+        return None
+    if not include_deleted and row.deleted_at is not None:
+        return None
+    return serialize_piggy_statement(row)
+
+
 __all__ = [
     "DatabaseUnavailable",
     "DuplicateKeyError",
@@ -3383,4 +3466,8 @@ __all__ = [
     "piggy_summary",
     "piggy_month_series",
     "piggy_overview",
+    "serialize_piggy_statement",
+    "save_piggy_statement",
+    "list_piggy_statements",
+    "get_piggy_statement",
 ]

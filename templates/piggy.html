@@ -27,6 +27,13 @@
         <a class="btn btn-secondary" href="{{ url_for('export_piggy_csv', month=month, contributor=contributor, type=entry_type) }}">
             <i data-lucide="file-spreadsheet"></i> CSV
         </a>
+        <a class="btn btn-secondary" href="{{ url_for('export_piggy_pdf', month=month) }}">
+            <i data-lucide="file-text"></i> PDF
+        </a>
+        <button type="button" class="icon-btn" data-piggy-print
+                aria-label="Print this page" title="Print">
+            <i data-lucide="printer"></i>
+        </button>
         <button type="button" class="icon-btn" data-dialog="piggy-settings-dialog"
                 aria-label="Piggy bank settings" title="Piggy bank settings">
             <i data-lucide="settings"></i>
@@ -302,6 +309,43 @@
     </div>
     {% endif %}
 </section>
+
+{% if statements %}
+<section class="card piggy-statements-card">
+    <div class="section-head">
+        <h2>PDF statements</h2>
+        <span class="meta">Saved with SHA-256 checks</span>
+    </div>
+    <ul class="txn-list">
+        {% for s in statements %}
+        <li class="txn-row">
+            <span class="txn-icon"><i data-lucide="file-text"></i></span>
+            <div class="txn-main">
+                <div class="txn-title">{{ s.period_start[:7] }} statement</div>
+                <div class="txn-note">
+                    {{ s.entry_count }} entr{{ 'y' if s.entry_count == 1 else 'ies' }}
+                    · closing {{ s.closing_balance|inr }}
+                    · saved {{ s.generated_at[:10] }}
+                </div>
+            </div>
+            <div class="txn-side">
+                <div class="txn-actions piggy-statement-actions">
+                    <button type="button" class="icon-btn" data-piggy-verify
+                            data-verify-url="{{ url_for('verify_piggy_statement', statement_id=s.id) }}"
+                            aria-label="Verify statement integrity" title="Verify integrity">
+                        <i data-lucide="shield-check"></i>
+                    </button>
+                    <a class="icon-btn" href="{{ url_for('download_piggy_statement', statement_id=s.id) }}"
+                       aria-label="Download statement" title="Download PDF">
+                        <i data-lucide="download"></i>
+                    </a>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
 
 {% if deleted %}
 <section class="card deleted-card" aria-labelledby="piggy-deleted-heading">

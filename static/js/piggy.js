@@ -4,6 +4,12 @@
 
   var config = window.PIGGY || {};
 
+  /* ---------- print ---------- */
+  var printButton = document.querySelector("[data-piggy-print]");
+  if (printButton) {
+    printButton.addEventListener("click", function () { window.print(); });
+  }
+
   /* ---------- month picker ---------- */
   var monthPicker = document.querySelector("[data-piggy-month]");
   if (monthPicker) {
@@ -205,6 +211,26 @@
     }).catch(function (error) {
       window.showToast(error.message, "error");
       if (submit) submit.disabled = false;
+    });
+  });
+
+  /* ---------- verify a saved PDF statement ---------- */
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-piggy-verify]");
+    if (!button) return;
+    event.preventDefault();
+    button.disabled = true;
+
+    window.Api.get(button.dataset.verifyUrl).then(function (data) {
+      button.disabled = false;
+      if (data.matches) {
+        window.showToast("Statement verified: the PDF matches its saved SHA-256 hash.", "success");
+      } else {
+        window.showToast("Verification failed: the PDF file has changed.", "error");
+      }
+    }, function (error) {
+      button.disabled = false;
+      window.showToast(error.message || "Could not verify the statement.", "error");
     });
   });
 
