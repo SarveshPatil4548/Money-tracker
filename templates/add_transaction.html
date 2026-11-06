@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Add transaction · Money Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Add transaction</h1>
+        <p class="sub">Record a payment or a deposit.</p>
+    </div>
+    <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('transactions') }}">
+            <i data-lucide="arrow-left"></i> Back to transactions
+        </a>
+    </div>
+</div>
+
+<section class="card">
+    <form method="post" action="{{ url_for('add_transaction') }}" class="txn-form">
+        <input type="hidden" name="next" value="{{ url_for('transactions') }}">
+        {% with idp = 'page-' %}
+            {% include "partials/txn_fields.html" %}
+        {% endwith %}
+        <button type="submit" class="btn btn-block">
+            <i data-lucide="check"></i> Save transaction
+        </button>
+    </form>
+</section>
+{% endblock %}
+
+{% block dialogs %}
+    {% include "partials/confirm_delete.html" %}
+{% endblock %}

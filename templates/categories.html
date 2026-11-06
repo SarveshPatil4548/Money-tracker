@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}[MoneyWise] | Categories{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Categories</h1>
+        <p class="sub">Labels for every kind of income and expense you track.</p>
+    </div>
+</div>
+
+<section class="card">
+    <div class="section-head">
+        <h2>New category</h2>
+    </div>
+    <form method="post" action="{{ url_for('add_category') }}">
+        <div class="form-grid">
+            <div class="field">
+                <label for="name">Name</label>
+                <input type="text" class="input" name="name" id="name"
+                       maxlength="40" placeholder="e.g. Pets" required>
+            </div>
+            <div class="field">
+                <label for="type">Type</label>
+                <select class="select" name="type" id="type" required>
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+            </div>
+            <div class="field">
+                <button type="submit" class="btn btn-block">
+                    <i data-lucide="plus"></i> Add
+                </button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>Income</h2>
+        <span class="meta" data-cat-count="income">{{ categories|selectattr('type', 'equalto', 'income')|list|length }} categories</span>
+    </div>
+    {% set income_cats = categories|selectattr('type', 'equalto', 'income')|list %}
+    {% if income_cats %}
+    <div class="cat-rows">
+        {% for c in income_cats %}
+        <div class="cat-row" data-cat-row data-cat-id="{{ c.id }}" data-cat-type="{{ c.type }}"
+             data-category-name="{{ c.name }}">
+            <span class="cat-chip income">
+                <i data-lucide="{{ icon_for(c.name) }}"></i> {{ c.name }}
+            </span>
+            <div class="cat-actions">
+                {% if c.is_protected %}
+                <span class="icon-btn cat-locked" role="img"
+                      aria-label="{{ c.name }} is a locked fallback category"
+                      title="Locked: this fallback category keeps uncategorised entries working, so it cannot be renamed.">
+                    <i data-lucide="lock"></i>
+                </span>
+                {% else %}
+                <button type="button" class="icon-btn"
+                        aria-label="Edit {{ c.name }} category"
+                        title="Edit category"
+                        data-cat-edit
+                        data-category-id="{{ c.id }}"
+                        data-category-name="{{ c.name }}"
+                        data-category-type="{{ c.type }}"
+                        data-edit-url="{{ url_for('edit_category', category_id=c.id, _external=True) }}">
+                    <i data-lucide="pencil"></i>
+                </button>
+                {% endif %}
+                <button type="button" class="icon-btn danger"
+                        aria-label="Delete {{ c.name }} category"
+                        title="Delete category"
+                        data-cat-delete
+                        data-category-id="{{ c.id }}"
+                        data-category-name="{{ c.name }}"
+                        data-category-type="{{ c.type }}"
+                        data-usage-url="{{ url_for('category_usage', category_id=c.id, _external=True) }}"
+                        data-delete-url="{{ url_for('delete_category', category_id=c.id, _external=True) }}">
+                    <i data-lucide="trash-2"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="tags"></i></span>
+        <p class="empty-title">No income categories</p>
+        <p class="empty-sub">Add one above so income entries have somewhere to go.</p>
+    </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>Expenses</h2>
+        <span class="meta" data-cat-count="expense">{{ categories|selectattr('type', 'equalto', 'expense')|list|length }} categories</span>
+    </div>
+    {% set expense_cats = categories|selectattr('type', 'equalto', 'expense')|list %}
+    {% if expense_cats %}
+    <div class="cat-rows">
+        {% for c in expense_cats %}
+        <div class="cat-row" data-cat-row data-cat-id="{{ c.id }}" data-cat-type="{{ c.type }}"
+             data-category-name="{{ c.name }}">
+            <span class="cat-chip expense">
+                <i data-lucide="{{ icon_for(c.name) }}"></i> {{ c.name }}
+            </span>
+            <div class="cat-actions">
+                {% if c.is_protected %}
+                <span class="icon-btn cat-locked" role="img"
+                      aria-label="{{ c.name }} is a locked fallback category"
+                      title="Locked: this fallback category keeps uncategorised entries working, so it cannot be renamed.">
+                    <i data-lucide="lock"></i>
+                </span>
+                {% else %}
+                <button type="button" class="icon-btn"
+                        aria-label="Edit {{ c.name }} category"
+                        title="Edit category"
+                        data-cat-edit
+                        data-category-id="{{ c.id }}"
+                        data-category-name="{{ c.name }}"
+                        data-category-type="{{ c.type }}"
+                        data-edit-url="{{ url_for('edit_category', category_id=c.id, _external=True) }}">
+                    <i data-lucide="pencil"></i>
+                </button>
+                {% endif %}
+                <button type="button" class="icon-btn danger"
+                        aria-label="Delete {{ c.name }} category"
+                        title="Delete category"
+                        data-cat-delete
+                        data-category-id="{{ c.id }}"
+                        data-category-name="{{ c.name }}"
+                        data-category-type="{{ c.type }}"
+                        data-usage-url="{{ url_for('category_usage', category_id=c.id, _external=True) }}"
+                        data-delete-url="{{ url_for('delete_category', category_id=c.id, _external=True) }}">
+                    <i data-lucide="trash-2"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="tags"></i></span>
+        <p class="empty-title">No expense categories</p>
+        <p class="empty-sub">Add one above so expenses have somewhere to go.</p>
+    </div>
+    {% endif %}
+</section>
+
+<section class="card deleted-card" id="archived-categories" aria-labelledby="archived-heading"
+         {% if not archived_categories %}hidden{% endif %}>
+    <div class="section-head">
+        <h2 id="archived-heading">
+            <i data-lucide="archive"></i> Archived
+            <span class="section-hint">Hidden from pickers and this list, kept on old transactions.</span>
+        </h2>
+    </div>
+    <ul class="cat-rows" id="archived-category-list">
+        {% for c in archived_categories %}
+        <li class="cat-row" data-cat-row data-cat-id="{{ c.id }}" data-cat-type="{{ c.type }}">
+            <span class="cat-chip {{ c.type }}">
+                <i data-lucide="{{ icon_for(c.name) }}"></i> {{ c.name }}
+            </span>
+            <span class="cat-date">archived {{ c.archived_at[:10] }}</span>
+            <div class="cat-actions">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        data-cat-restore
+                        data-category-id="{{ c.id }}"
+                        data-restore-url="{{ url_for('restore_category', category_id=c.id, _external=True) }}">
+                    <i data-lucide="undo-2"></i> Restore
+                </button>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+
+<section class="card deleted-card" id="deleted-categories" aria-labelledby="deleted-categories-heading"
+         {% if not deleted_categories %}hidden{% endif %}>
+    <div class="section-head">
+        <h2 id="deleted-categories-heading">
+            <i data-lucide="undo-2"></i> Recently deleted
+            <span class="section-hint">Deleted, not erased — Undo puts the category back.</span>
+        </h2>
+    </div>
+    <ul class="cat-rows" id="deleted-category-list">
+        {% for c in deleted_categories %}
+        <li class="cat-row" data-cat-id="{{ c.id }}" data-cat-type="{{ c.type }}">
+            <span class="cat-chip {{ c.type }}">
+                <i data-lucide="{{ icon_for(c.name) }}"></i> {{ c.name }}
+            </span>
+            <span class="cat-date">deleted {{ c.deleted_at[:10] }}</span>
+            <div class="cat-actions">
+                <button type="button" class="btn btn-secondary btn-sm"
+                        data-cat-undo
+                        data-category-id="{{ c.id }}"
+                        data-undo-url="{{ url_for('undo_category_delete', category_id=c.id, _external=True) }}">
+                    <i data-lucide="undo-2"></i> Undo
+                </button>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endblock %}
+
+{% block dialogs %}
+    {% include "partials/txn_modal.html" %}
+    {% include "partials/category_delete_modal.html" %}
+    {% include "partials/category_edit_modal.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/categories.js') }}"></script>
+{% endblock %}

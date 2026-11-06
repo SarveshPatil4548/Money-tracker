@@ -1,0 +1,23 @@
+<dialog id="txn-dialog" aria-labelledby="txn-dialog-title">
+    <form method="post" action="{{ url_for('add_transaction') }}" data-default-action="{{ url_for('add_transaction') }}" class="modal txn-form" id="txn-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-head">
+            <h2 id="txn-dialog-title" data-form-title>Add transaction</h2>
+            <button type="button" class="icon-btn" data-dialog-close aria-label="Close dialog">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" name="next" value="{{ request.path }}">
+            {% with idp = '' %}
+                {% include "partials/txn_fields.html" %}
+            {% endwith %}
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn">
+                <i data-lucide="check"></i> Save transaction
+            </button>
+        </div>
+    </form>
+</dialog>

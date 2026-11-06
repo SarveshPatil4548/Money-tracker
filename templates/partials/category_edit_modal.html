@@ -1,0 +1,30 @@
+<dialog id="category-edit-dialog" class="category-dialog" aria-labelledby="category-edit-title">
+    <form method="post" id="category-edit-form" action="" data-json-form
+          class="modal category-confirm-modal category-edit-modal">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-head">
+            <h2 id="category-edit-title" data-category-edit-title>Edit category</h2>
+            <button type="button" class="icon-btn" data-dialog-close aria-label="Close dialog">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label for="category-edit-name">Name</label>
+                <input type="text" class="input" name="name" id="category-edit-name"
+                       maxlength="40" autocomplete="off" autofocus required
+                       aria-describedby="category-edit-name-error category-edit-meta">
+                <p class="field-error" id="category-edit-name-error"
+                   data-error-for="name" role="alert"></p>
+                <p class="confirm-hint" id="category-edit-meta"></p>
+            </div>
+            <p class="field-error" id="category-edit-error" role="alert"></p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn" id="category-edit-submit">
+                <i data-lucide="check"></i> Save changes
+            </button>
+        </div>
+    </form>
+</dialog>

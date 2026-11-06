@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Money Tracker</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1>Money Tracker</h1>
+        <div id="user-box" class="user-box" hidden>
+          <span id="user-email" class="meta"></span>
+          <button id="logout" class="link-btn" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <section id="auth-view" class="card auth-card" hidden>
+        <div class="tabs">
+          <button class="tab is-active" data-auth-tab="login" type="button">Sign in</button>
+          <button class="tab" data-auth-tab="register" type="button">Create account</button>
+        </div>
+        <form id="auth-form" class="form" novalidate>
+          <label class="field" id="name-field" hidden>
+            <span>Name</span>
+            <input type="text" name="name" autocomplete="name" />
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" name="email" value="demo@money.local" autocomplete="email" required />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input type="password" name="password" value="demo1234" autocomplete="current-password" required minlength="8" />
+          </label>
+          <p class="error" id="auth-error" role="alert" hidden></p>
+          <button class="btn" type="submit" id="auth-submit">Sign in</button>
+          <p class="hint">
+            Demo login <strong>demo@money.local</strong> / <strong>demo1234</strong>, or create an account.
+          </p>
+        </form>
+      </section>
+
+      <main id="app-view" hidden>
+        <section class="card">
+          <h2>Add expense</h2>
+          <form id="txn-form" class="form form-inline" novalidate>
+            <div class="segmented" role="radiogroup" aria-label="Type">
+              <label><input type="radio" name="type" value="expense" checked /> Expense</label>
+              <label><input type="radio" name="type" value="income" /> Income</label>
+            </div>
+            <label class="field">
+              <span>Amount</span>
+              <input type="number" name="amount" step="0.01" min="0" placeholder="0.00" required />
+            </label>
+            <label class="field">
+              <span>Category</span>
+              <select name="categoryId" id="category-select" required></select>
+            </label>
+            <label class="field">
+              <span>Date</span>
+              <input type="date" name="date" required />
+            </label>
+            <label class="field field-grow">
+              <span>Note</span>
+              <input type="text" name="description" maxlength="200" placeholder="Optional" />
+            </label>
+            <button class="btn" type="submit" id="txn-submit">Save expense</button>
+          </form>
+          <p class="error" id="txn-error" role="alert" hidden></p>
+        </section>
+
+        <section class="card">
+          <div class="list-head">
+            <h2>Transactions</h2>
+            <span class="meta" id="txn-count"></span>
+          </div>
+          <ul id="txn-list" class="txn-list"></ul>
+          <p class="empty" id="txn-empty" hidden>No transactions yet.</p>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

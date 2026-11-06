@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="Track your money with budgets, transactions and insights.">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/logo.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32x32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-icon.png') }}">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}[MoneyWise] | Dashboard{% endblock %}</title>
+
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem("money-tracker-theme");
+                if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+            } catch (e) {}
+        })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <script src="{{ url_for('static', filename='js/theme.js') }}" defer></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+    <header class="topbar">
+        <a class="brand" href="{{ url_for('dashboard') }}">
+            <span class="brand-mark"><img src="{{ url_for('static', filename='img/logo.svg') }}" alt="MoneyWise logo" width="28" height="28"></span>
+            <span>MoneyWise</span>
+        </a>
+        <div class="topbar-actions">
+            <div class="notification-wrap">
+                <button type="button" class="icon-btn notification-btn" data-alerts-toggle
+                        aria-expanded="false" aria-controls="alerts-panel"
+                        aria-label="Budget alerts{% if budget_alert_count %} ({{ budget_alert_count }} new){% endif %}">
+                    <i data-lucide="bell"></i>
+                    {% if budget_alert_count %}
+                    <span class="notification-badge">{{ budget_alert_count }}</span>
+                    {% endif %}
+                </button>
+                <div class="notification-panel" id="alerts-panel" hidden>
+                    <div class="notification-head">
+                        <strong>Budget alerts</strong>
+                        {% if budget_alerts %}
+                        <button type="button" class="link" data-alert-dismiss-all>Dismiss all</button>
+                        {% endif %}
+                    </div>
+                    {% if budget_alerts %}
+                    <div class="notification-list">
+                        {% for a in budget_alerts %}
+                        <div class="notification-item {{ a.level }}">
+                            <span class="alert-icon">
+                                <i data-lucide="{{ 'alert-triangle' if a.level == 'over' else 'bell' }}"></i>
+                            </span>
+                            <span class="notification-copy">{{ a.message }}</span>
+                            <button type="button" class="icon-btn" aria-label="Dismiss alert"
+                                    data-alert-dismiss data-url="{{ url_for('dismiss_budget_alert', alert_id=a.id) }}">
+                                <i data-lucide="x"></i>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="notification-empty">No budget alerts right now.</p>
+                    {% endif %}
+                </div>
+            </div>
+            <button type="button" class="icon-btn" data-theme-toggle>
+                <span class="icon-moon"><i data-lucide="moon"></i></span>
+                <span class="icon-sun"><i data-lucide="sun"></i></span>
+            </button>
+            <a class="btn btn-sm" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+                <i data-lucide="plus"></i> Add
+            </a>
+        </div>
+    </header>
+
+    <aside class="sidebar">
+        <a class="brand" href="{{ url_for('dashboard') }}">
+            <span class="brand-mark"><img src="{{ url_for('static', filename='img/logo.svg') }}" alt="MoneyWise logo" width="28" height="28"></span>
+            <span>MoneyWise</span>
+        </a>
+
+        <nav class="side-nav" aria-label="Main navigation">
+            <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+                <i data-lucide="layout-dashboard"></i> Dashboard
+            </a>
+            <a href="{{ url_for('transactions') }}" class="{{ 'active' if request.endpoint in ('transactions', 'add_transaction') }}">
+                <i data-lucide="arrow-left-right"></i> Transactions
+            </a>
+            <a href="{{ url_for('budgets') }}" class="{{ 'active' if request.endpoint == 'budgets' }}">
+                <i data-lucide="target"></i> Budgets
+            </a>
+            <a href="{{ url_for('categories') }}" class="{{ 'active' if request.endpoint == 'categories' }}">
+                <i data-lucide="tags"></i> Categories
+            </a>
+        </nav>
+
+        <div class="side-foot">
+            <a class="btn btn-block" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+                <i data-lucide="plus"></i> Add transaction
+            </a>
+            <div class="theme-toggle" role="group" aria-label="Colour theme">
+                <button type="button" data-theme-set="system" aria-pressed="true" aria-label="Follow system theme" title="Follow system">
+                    <i data-lucide="monitor"></i>
+                </button>
+                <button type="button" data-theme-set="light" aria-pressed="false" aria-label="Light theme" title="Light">
+                    <i data-lucide="sun"></i>
+                </button>
+                <button type="button" data-theme-set="dark" aria-pressed="false" aria-label="Dark theme" title="Dark">
+                    <i data-lucide="moon"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main" id="main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-stack">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">
+                            <i data-lucide="{{ 'alert-circle' if category == 'error' else 'check-circle-2' }}"></i>
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <nav class="bottomnav" aria-label="Main navigation">
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+            <i data-lucide="layout-dashboard"></i> Home
+        </a>
+        <a href="{{ url_for('transactions') }}" class="{{ 'active' if request.endpoint in ('transactions', 'add_transaction') }}">
+            <i data-lucide="arrow-left-right"></i> Activity
+        </a>
+        <a href="{{ url_for('budgets') }}" class="{{ 'active' if request.endpoint == 'budgets' }}">
+            <i data-lucide="target"></i> Budgets
+        </a>
+        <a href="{{ url_for('categories') }}" class="{{ 'active' if request.endpoint == 'categories' }}">
+            <i data-lucide="tags"></i> Tags
+        </a>
+    </nav>
+</div>
+
+{% block dialogs %}
+    {% include "partials/txn_modal.html" %}
+{% endblock %}
+{% include "partials/confirm_delete.html" %}
+
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

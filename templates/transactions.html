@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}[MoneyWise] | Transactions{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Transactions</h1>
+        <p class="sub">
+            {{ transactions|length }} entr{{ 'y' if transactions|length == 1 else 'ies' }} · everything you've logged.
+        </p>
+    </div>
+    <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('export_backup_sql') }}">
+            <i data-lucide="download"></i> Download backup
+        </a>
+        <a class="btn btn-secondary" href="{{ url_for('export_transactions_csv') }}">
+            <i data-lucide="file-spreadsheet"></i> CSV
+        </a>
+        <a class="btn btn-secondary" href="{{ url_for('export_transactions_json') }}">
+            <i data-lucide="braces"></i> JSON
+        </a>
+        <a class="btn" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+            <i data-lucide="plus"></i> Add transaction
+        </a>
+    </div>
+</div>
+
+{% if transactions %}
+<div class="card">
+    <div class="toolbar">
+        <div class="filter-field field-search">
+            <label for="filter-search">Search</label>
+            <div class="search-field">
+                <i data-lucide="search"></i>
+                <input type="search" class="input" id="filter-search" placeholder="Category or note" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="filter-field">
+            <label for="filter-type">Type</label>
+            <select class="select" id="filter-type">
+                <option value="">All types</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filter-category">Category</label>
+            <select class="select" id="filter-category">
+                <option value="">All categories</option>
+                {% for c in categories %}
+                <option value="{{ c.name }}" data-type="{{ c.type }}">{{ c.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filter-sort">Sort</label>
+            <select class="select" id="filter-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="high">Amount · high to low</option>
+                <option value="low">Amount · low to high</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filter-from">From</label>
+            <input type="date" class="input" id="filter-from">
+        </div>
+
+        <div class="filter-field">
+            <label for="filter-to">To</label>
+            <input type="date" class="input" id="filter-to">
+        </div>
+    </div>
+
+    <div class="filter-summary" id="filter-summary" aria-live="polite"></div>
+
+    <ul class="txn-list" id="txn-results">
+        {% for group in groups %}
+        <li class="txn-date" data-date="{{ group.date }}" data-group-header>
+            <span>{{ group.label }}</span>
+            <span class="day-total num" data-day-total>{{ group.net|inr }}</span>
+        </li>
+        {% for t in group['items'] %}
+        <li class="txn-row"
+            data-id="{{ t.id }}"
+            data-type="{{ t.type }}"
+            data-category="{{ t.category }}"
+            data-category-id="{{ t.category_id }}"
+            data-date="{{ t.txn_date }}"
+            data-amount="{{ t.amount }}"
+            data-note="{{ t.description or '' }}"
+            data-edit-url="{{ url_for('edit_transaction', txn_id=t.id) }}"
+            data-text="{{ (t.category ~ ' ' ~ (t.description or ''))|lower }}">
+            <span class="txn-icon {{ t.type }}">
+                <i data-lucide="{{ icon_for(t.category) }}"></i>
+            </span>
+            <div class="txn-main">
+                <div class="txn-title">{{ t.category }}</div>
+                <div class="txn-note">{{ t.description or 'No note' }}</div>
+            </div>
+            <div class="txn-side">
+                <span class="txn-amount {{ t.type }}">
+                    {{ '+' if t.type == 'income' else '-' }}{{ t.amount|inr }}
+                </span>
+                <div class="txn-actions">
+                    <button type="button" class="icon-btn" data-dialog="txn-dialog"
+                            data-edit
+                            data-edit-url="{{ url_for('edit_transaction', txn_id=t.id) }}"
+                            aria-label="Edit {{ t.category }} transaction">
+                        <i data-lucide="pencil"></i>
+                    </button>
+                    <button type="button" class="icon-btn danger"
+                            aria-label="Delete {{ t.category }} transaction"
+                            data-delete-url="{{ url_for('delete_transaction', txn_id=t.id, next=request.path) }}"
+                            data-delete-label="{{ t.category }} · {{ t.amount|inr }}">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+        {% endfor %}
+    </ul>
+
+    <div class="empty" id="filtered-empty" hidden>
+        <span class="empty-icon"><i data-lucide="search-x"></i></span>
+        <p class="empty-title">No matching transactions</p>
+        <p class="empty-sub">Try a different search, widen the date range, or clear the filters.</p>
+        <button type="button" class="btn btn-secondary" id="clear-filters">Clear filters</button>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="receipt-text"></i></span>
+        <p class="empty-title">No transactions yet</p>
+        <p class="empty-sub">Once you add income or an expense, it will show up here grouped by date.</p>
+        <a class="btn" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+            <i data-lucide="plus"></i> Add your first transaction
+        </a>
+    </div>
+</div>
+{% endif %}
+
+{% if deleted %}
+<section class="card deleted-card" aria-labelledby="deleted-heading">
+    <div class="section-head">
+        <h2 id="deleted-heading">
+            <i data-lucide="undo-2"></i> Recently deleted
+            <span class="section-hint">Deleted, not erased — Undo puts them back.</span>
+        </h2>
+    </div>
+    <ul class="txn-list deleted-list">
+        {% for t in deleted %}
+        <li class="txn-row is-deleted">
+            <span class="txn-icon {{ t.type }}">
+                <i data-lucide="{{ icon_for(t.category) }}"></i>
+            </span>
+            <div class="txn-main">
+                <div class="txn-title">{{ t.category }}</div>
+                <div class="txn-note">{{ t.description or 'No note' }} · deleted {{ t.deleted_at }}</div>
+            </div>
+            <div class="txn-side">
+                <span class="txn-amount {{ t.type }}">
+                    {{ '+' if t.type == 'income' else '-' }}{{ t.amount|inr }}
+                </span>
+                <div class="txn-actions">
+                    <form method="post" action="{{ url_for('undo_transaction', txn_id=t.id, next=request.path) }}">
+                        <button type="submit" class="btn btn-secondary btn-sm">
+                            <i data-lucide="undo-2"></i> Undo
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if transactions %}
+<script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
+{% endif %}
+{% endblock %}

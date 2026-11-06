@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+
+{% block title %}[MoneyWise] | Budgets{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Budgets</h1>
+        <p class="sub">Plan each category, watch the pace, and keep the month on track.</p>
+    </div>
+    <div class="actions">
+        <form class="month-switcher" method="get" action="{{ url_for('budgets') }}">
+            <a class="icon-btn" href="{{ url_for('budgets', month=previous_month) }}" aria-label="Previous month">
+                <i data-lucide="chevron-left"></i>
+            </a>
+            <input type="month" name="month" id="budget-month" value="{{ month }}"
+                   aria-label="Choose a month" data-month-picker>
+            <a class="icon-btn" href="{{ url_for('budgets', month=next_month) }}" aria-label="Next month">
+                <i data-lucide="chevron-right"></i>
+            </a>
+            <noscript><button type="submit" class="btn btn-sm">Go</button></noscript>
+        </form>
+        <button type="button" class="btn" data-dialog="budget-dialog" data-budget-add data-month="{{ month }}">
+            <i data-lucide="plus"></i> Add budget
+        </button>
+    </div>
+</div>
+
+{% if alerts %}
+<section class="card alert-card">
+    <div class="section-head">
+        <h2><i data-lucide="bell-ring"></i> Budget alerts</h2>
+        <button type="button" class="link" data-alert-dismiss-all>
+            Dismiss all
+        </button>
+    </div>
+    <div class="alert-list">
+        {% for a in alerts %}
+        <div class="alert-row {{ a.level }}">
+            <span class="alert-icon">
+                <i data-lucide="{{ 'alert-triangle' if a.level == 'over' else 'bell' }}"></i>
+            </span>
+            <div class="alert-copy">
+                <strong>{{ 'Over budget' if a.level == 'over' else 'Approaching the limit' }}</strong>
+                <span>{{ a.message }}</span>
+            </div>
+            <button type="button" class="icon-btn" aria-label="Dismiss alert"
+                    data-alert-dismiss data-url="{{ url_for('dismiss_budget_alert', alert_id=a.id) }}">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<div class="stats budget-stats">
+    <article class="stat">
+        <span class="stat-icon"><i data-lucide="target"></i></span>
+        <span class="stat-label">Overall budget</span>
+        <span class="stat-value {{ 'expense' if overview.overall_status == 'over' else '' }}">{{ overview.overall_limit|inr }}</span>
+        <span class="stat-foot">{{ 'Set for ' if overview.overall else 'Sum of category budgets · ' }}{{ month_label }}</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon expense"><i data-lucide="trending-down"></i></span>
+        <span class="stat-label">Spent this month</span>
+        <span class="stat-value expense">{{ overview.overall_spent|inr }}</span>
+        <span class="stat-foot">{{ overview.overall_percent|round|int }}% of the overall budget used</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon {{ 'expense' if overview.overall_remaining < 0 else 'income' }}">
+            <i data-lucide="{{ 'alert-triangle' if overview.overall_remaining < 0 else 'piggy-bank' }}"></i>
+        </span>
+        <span class="stat-label">{{ 'Over budget by' if overview.overall_remaining < 0 else 'Remaining' }}</span>
+        <span class="stat-value {{ 'expense' if overview.overall_remaining < 0 else 'income' }}">
+            {{ (overview.overall_remaining * -1 if overview.overall_remaining < 0 else overview.overall_remaining)|inr }}
+        </span>
+        <span class="stat-foot">{{ overview.days_left }} day{{ 's' if overview.days_left != 1 }} left in the month</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon"><i data-lucide="calendar-clock"></i></span>
+        <span class="stat-label">Safe to spend / day</span>
+        <span class="stat-value">{{ overview.safe_to_spend|inr }}</span>
+        <span class="stat-foot">
+            {% if overview.days_left %}
+                Keeps you inside the remaining budget
+            {% else %}
+                Month is complete
+            {% endif %}
+        </span>
+    </article>
+</div>
+
+<section class="card overall-card">
+    <div class="section-head">
+        <h2>Overall monthly budget</h2>
+        <span class="meta">{{ month_label }}</span>
+    </div>
+    <form method="post" action="{{ url_for('save_overall_budget') }}"
+          class="form-grid overall-form" data-budget-json>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <div class="field">
+            <label for="overall-limit">Monthly limit</label>
+            <div class="amount-wrap">
+                <span class="currency" aria-hidden="true">₹</span>
+                <input type="number" inputmode="decimal" step="0.01" min="0.01"
+                       id="overall-limit" name="monthly_limit"
+                       value="{{ overview.overall.monthly_limit if overview.overall else '' }}"
+                       placeholder="e.g. 50000" required>
+            </div>
+        </div>
+        <div class="field">
+            <label for="overall-threshold">Alert at (%)</label>
+            <input type="number" min="1" max="100" step="1" id="overall-threshold"
+                   name="alert_threshold"
+                   value="{{ overview.overall.alert_threshold if overview.overall else 80 }}">
+        </div>
+        <div class="field">
+            <button type="submit" class="btn btn-block">
+                <i data-lucide="check"></i> {{ 'Update' if overview.overall else 'Set overall budget' }}
+            </button>
+        </div>
+        {% if overview.overall %}
+        <div class="field">
+            <button type="button" class="btn btn-secondary btn-block" data-delete-url="{{ url_for('delete_overall_budget', budget_id=overview.overall.id) }}"
+                    data-delete-label="Overall budget · {{ overview.overall.monthly_limit|inr }}">
+                <i data-lucide="trash-2"></i> Remove
+            </button>
+        </div>
+        {% endif %}
+    </form>
+    <p class="hint">The overall budget covers every expense category. Category budgets still track their own limits.</p>
+</section>
+
+<div class="grid-2 budget-grid">
+    <section class="card">
+        <div class="section-head">
+            <h2>Where the money is going</h2>
+            <span class="meta">{{ month_label }}</span>
+        </div>
+        {% if budgets %}
+        <div class="chart-wrap chart-panel">
+            <canvas id="budgetChart" role="img"
+                    aria-label="Bar chart comparing spent and budgeted amounts by category"></canvas>
+            <div class="chart-state is-visible" id="budgetChart-state">
+                <div class="skeleton skeleton-bar"></div>
+                <span>Loading chart…</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty">
+            <span class="empty-icon"><i data-lucide="bar-chart-3"></i></span>
+            <p class="empty-title">No category budgets yet</p>
+            <p class="empty-sub">Add a budget and this chart will compare your spending with each limit.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <div class="section-head">
+            <h2>Month at a glance</h2>
+            <span class="meta">{{ overview.days_elapsed }}/{{ overview.days_in_month }} days</span>
+        </div>
+        <div class="pace-list">
+            <div class="pace-row">
+                <span>Category budgets</span>
+                <strong>{{ overview.total_budgeted|inr }}</strong>
+            </div>
+            <div class="pace-row">
+                <span>Spent in those categories</span>
+                <strong>{{ overview.total_spent|inr }}</strong>
+            </div>
+            <div class="pace-row">
+                <span>Budgeted categories</span>
+                <strong>{{ budgets|length }}</strong>
+            </div>
+            <div class="pace-row">
+                <span>Unbudgeted spending</span>
+                <strong>
+                    {% set unbudgeted_total = overview.unbudgeted|sum(attribute='total') %}
+                    {{ unbudgeted_total|inr }}
+                </strong>
+            </div>
+        </div>
+        <div class="progress pace-progress" role="progressbar"
+             aria-valuenow="{{ overview.overall_percent|round|int }}" aria-valuemin="0" aria-valuemax="100"
+             aria-label="Overall budget usage">
+            <div class="progress-fill {{ 'over' if overview.overall_status == 'over' else 'close' if overview.overall_status == 'warning' else '' }}"
+                 style="width: {{ [overview.overall_percent, 100]|min }}%;"></div>
+        </div>
+        <p class="budget-note">{{ overview.overall_percent|round|int }}% of the overall budget used</p>
+    </section>
+</div>
+
+<section class="card">
+    <div class="section-head budget-head">
+        <div>
+            <h2>Category budgets</h2>
+            <span class="meta">{{ budgets|length }} budget{{ 's' if budgets|length != 1 }} for {{ month_label }}</span>
+        </div>
+        <div class="budget-tools">
+            {% if copy_preview.copy_count %}
+            <button type="button" class="btn btn-secondary btn-sm" data-copy-budgets
+                    data-url="{{ url_for('copy_last_month_budgets') }}" data-month="{{ month }}">
+                <i data-lucide="copy"></i> Copy {{ copy_preview.copy_count }} from {{ copy_preview.source_label }}
+            </button>
+            {% endif %}
+            <label class="sr-only" for="budget-search">Search budgets</label>
+            <input type="search" id="budget-search" class="input input-sm" placeholder="Search category"
+                   data-budget-search>
+            <label class="sr-only" for="budget-filter">Filter budgets</label>
+            <select id="budget-filter" class="select select-sm" data-budget-filter>
+                <option value="all">All statuses</option>
+                <option value="over">Over budget</option>
+                <option value="warning">Close to limit</option>
+                <option value="normal">On track</option>
+            </select>
+            <label class="sr-only" for="budget-sort">Sort budgets</label>
+            <select id="budget-sort" class="select select-sm" data-budget-sort>
+                <option value="name">Name</option>
+                <option value="percent">Most used</option>
+                <option value="remaining">Least left</option>
+                <option value="spent">Most spent</option>
+            </select>
+        </div>
+    </div>
+
+    {% if budgets %}
+    <div class="budget-list" data-budget-list>
+        {% for b in budgets %}
+        {% set status = 'over' if b.status == 'over' else ('close' if b.status == 'warning' else 'good') %}
+        <div class="budget-row" data-budget-row
+             data-name="{{ b.name|lower }}" data-status="{{ b.status }}"
+             data-percent="{{ b.percent }}" data-spent="{{ b.spent }}"
+             data-remaining="{{ b.remaining }}" data-limit="{{ b.effective_limit }}">
+            <div class="budget-top">
+                <span class="budget-name">
+                    <span class="txn-icon expense"><i data-lucide="{{ icon_for(b.name) }}"></i></span>
+                    <span>
+                        {{ b.name }}
+                        <span class="budget-tags">
+                            {% if b.rollover %}<span class="tag">Rollover</span>{% endif %}
+                            <span class="tag">Alert {{ b.alert_threshold }}%</span>
+                            {% if b.status == 'over' %}<span class="tag danger">Over</span>
+                            {% elif b.status == 'warning' %}<span class="tag warning">Close</span>{% endif %}
+                        </span>
+                    </span>
+                </span>
+                <span class="budget-side {{ status }}">
+                    {% if b.status == 'over' %}
+                        {{ b.over_amount|inr }} over
+                    {% else %}
+                        {{ b.remaining|inr }} left
+                    {% endif %}
+                    · {{ b.spent|inr }} of {{ b.effective_limit|inr }}
+                </span>
+                <span class="budget-actions">
+                    <button type="button" class="icon-btn" aria-label="Edit the {{ b.name }} budget"
+                            data-dialog="budget-dialog" data-budget-edit
+                            data-edit-url="{{ url_for('edit_budget', budget_id=b.id) }}"
+                            data-month="{{ month }}" data-name="{{ b.name }}"
+                            data-category-id="{{ b.category_id }}"
+                            data-limit="{{ b.monthly_limit }}"
+                            data-rollover="{{ '1' if b.rollover else '0' }}"
+                            data-threshold="{{ b.alert_threshold }}">
+                        <i data-lucide="pencil"></i>
+                    </button>
+                    <button type="button" class="icon-btn danger"
+                            aria-label="Remove the {{ b.name }} budget"
+                            data-delete-url="{{ url_for('delete_budget', budget_id=b.id) }}"
+                            data-delete-label="{{ b.name }} · {{ b.monthly_limit|inr }} for {{ month_label }}">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </span>
+            </div>
+            <div class="progress" role="progressbar" aria-valuenow="{{ b.percent|round|int }}"
+                 aria-valuemin="0" aria-valuemax="100" aria-label="{{ b.name }} budget usage">
+                <div class="progress-fill {{ status }}" style="width: {{ [b.percent, 100]|min }}%;"></div>
+            </div>
+            <div class="budget-note">
+                {{ b.percent|round|int }}% used
+                {% if b.rollover_amount > 0 %}· {{ b.rollover_amount|inr }} rolled over from earlier{% endif %}
+                {% if b.forecast_over %}
+                    · at this pace you'll spend {{ b.projected|inr }} by month end
+                {% elif b.days_left > 0 %}
+                    · {{ b.days_left }} day{{ 's' if b.days_left != 1 }} left
+                {% else %}
+                    · month complete
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="empty" data-budget-no-results hidden>
+        <span class="empty-icon"><i data-lucide="search-x"></i></span>
+        <p class="empty-title">No budgets match</p>
+        <p class="empty-sub">Try a different search or status filter.</p>
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="target"></i></span>
+        <p class="empty-title">No budgets for {{ month_label }}</p>
+        <p class="empty-sub">Pick a category and set a monthly cap — progress appears here automatically.</p>
+        <button type="button" class="btn" data-dialog="budget-dialog" data-budget-add data-month="{{ month }}">
+            <i data-lucide="plus"></i> Create your first budget
+        </button>
+        {% if copy_preview.copy_count %}
+        <button type="button" class="btn btn-secondary" data-copy-budgets
+                data-url="{{ url_for('copy_last_month_budgets') }}" data-month="{{ month }}">
+            <i data-lucide="copy"></i> Copy {{ copy_preview.copy_count }} from {{ copy_preview.source_label }}
+        </button>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+
+{% if overview.unbudgeted %}
+<section class="card">
+    <div class="section-head">
+        <h2>Not budgeted yet</h2>
+        <span class="meta">Spending without a limit</span>
+    </div>
+    <div class="unbudgeted-list">
+        {% for row in overview.unbudgeted %}
+        <div class="unbudgeted-row">
+            <span class="budget-name">
+                <span class="txn-icon expense"><i data-lucide="{{ icon_for(row.name) }}"></i></span>
+                {{ row.name }}
+            </span>
+            <span class="budget-side">{{ row.total|inr }} spent</span>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    data-dialog="budget-dialog" data-budget-add
+                    data-month="{{ month }}" data-category-id="{{ row.id }}"
+                    data-name="{{ row.name }}">
+                <i data-lucide="plus"></i> Set a budget
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block dialogs %}
+{{ super() }}
+<dialog id="budget-dialog" aria-labelledby="budget-dialog-title">
+    <form method="post" action="{{ url_for('add_budget') }}"
+          data-default-action="{{ url_for('add_budget') }}"
+          class="modal budget-form" id="budget-form" data-budget-json>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <div class="modal-head">
+            <h2 id="budget-dialog-title" data-budget-title>Add a budget</h2>
+            <button type="button" class="icon-btn" data-dialog-close aria-label="Close dialog">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label for="budget-category">Category</label>
+                <select class="select" name="category_id" id="budget-category" required>
+                    <option value="" disabled selected>Choose a category</option>
+                    {% for c in categories %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label for="budget-limit">Monthly limit</label>
+                <div class="amount-wrap">
+                    <span class="currency" aria-hidden="true">₹</span>
+                    <input type="number" inputmode="decimal" step="0.01" min="0.01"
+                           name="monthly_limit" id="budget-limit" placeholder="0.00" required>
+                </div>
+            </div>
+            <div class="form-grid form-grid-2">
+                <div class="field">
+                    <label for="budget-threshold">Alert at (%)</label>
+                    <input type="number" min="1" max="100" step="1"
+                           name="alert_threshold" id="budget-threshold" value="80">
+                </div>
+                <div class="field">
+                    <label class="check-row" for="budget-rollover">
+                        <input type="checkbox" name="rollover" id="budget-rollover" value="1">
+                        <span>Roll over unused money</span>
+                    </label>
+                    <p class="hint">Carry what's left into next month automatically.</p>
+                </div>
+            </div>
+            <p class="field-error" data-budget-error role="alert"></p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn" data-budget-submit>
+                <i data-lucide="check"></i> Save budget
+            </button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.BUDGETS = {
+        labels: {{ chart_labels|tojson }},
+        spent: {{ chart_spent|tojson }},
+        limits: {{ chart_limits|tojson }},
+        month: {{ month_label|tojson }}
+    };
+</script>
+{% if budgets %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/budgets.js') }}"></script>
+{% endblock %}

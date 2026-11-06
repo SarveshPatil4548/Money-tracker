@@ -1,0 +1,196 @@
+/* ==========================================================================
+   Design tokens — single source of truth.
+   Spacing: 4 / 8 / 16 / 24 / 32 scale.  Radii, shadows, type, colour.
+   Never hardcode colours or sizes in components — reference these.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- spacing scale ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- radii ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* ---- type scale ---- */
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-xs: 0.75rem;   /* 12 */
+  --text-sm: 0.8125rem; /* 13 */
+  --text-base: 0.9375rem; /* 15 */
+  --text-md: 1.0625rem; /* 17 */
+  --text-lg: 1.25rem;   /* 20 */
+  --text-xl: 1.5rem;    /* 24 */
+  --text-2xl: 2rem;     /* 32 */
+  --text-3xl: 2.5rem;   /* 40 */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- neutrals (light) ---- */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-3: #e8ebf0;
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+  --text: #101828;
+  --text-muted: #667085;
+  --text-faint: #98a2b3;
+  --inverse: #ffffff;
+
+  /* ---- primary accent ---- */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-active: #3730a3;
+  --accent-soft: #eef2ff;
+  --accent-soft-border: #dbe1ff;
+  --accent-ring: rgb(79 70 229 / 0.35);
+  --on-accent: #ffffff;
+
+  /* ---- semantic money colours (use sparingly) ---- */
+  --income: #16a34a;
+  --income-soft: #e8f8ef;
+  --income-border: #c3ecd3;
+  --expense: #dc2626;
+  --expense-soft: #fdecec;
+  --expense-border: #f8cfcf;
+  --warning: #d97706;
+  --warning-soft: #fdf3e3;
+
+  /* ---- chart series (read by JS via getComputedStyle) ---- */
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #14b8a6;
+  --chart-4: #f59e0b;
+  --chart-5: #ec4899;
+  --chart-6: #8b5cf6;
+  --chart-7: #84cc16;
+  --chart-8: #f43f5e;
+  --chart-grid: rgb(16 24 40 / 0.08);
+  --chart-tick: #667085;
+
+  /* ---- elevation ---- */
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(16 24 40 / 0.08), 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-md: 0 4px 12px rgb(16 24 40 / 0.08), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-lg: 0 16px 40px rgb(16 24 40 / 0.14), 0 2px 8px rgb(16 24 40 / 0.06);
+
+  /* ---- motion ---- */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur: 180ms;
+
+  /* ---- layout ---- */
+  --sidebar-w: 248px;
+  --content-max: 1120px;
+}
+
+/* ---- dark: manual toggle ---- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0e14;
+  --surface: #151823;
+  --surface-2: #1c2030;
+  --surface-3: #252a3d;
+  --border: #262b3b;
+  --border-strong: #39405a;
+  --text: #f2f4f8;
+  --text-muted: #9aa3b8;
+  --text-faint: #6b7488;
+  --inverse: #0c0e14;
+
+  --accent: #6366f1;
+  --accent-hover: #7c7ff5;
+  --accent-active: #8b8df7;
+  --accent-soft: #1e2140;
+  --accent-soft-border: #333a70;
+  --accent-ring: rgb(99 102 241 / 0.45);
+  --on-accent: #ffffff;
+
+  --income: #32d17d;
+  --income-soft: #11291d;
+  --income-border: #1c4430;
+  --expense: #ff6b6b;
+  --expense-soft: #2c1618;
+  --expense-border: #4a2226;
+  --warning: #fbbf24;
+  --warning-soft: #2b2110;
+
+  --chart-1: #818cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #2dd4bf;
+  --chart-4: #fbbf24;
+  --chart-5: #f472b6;
+  --chart-6: #a78bfa;
+  --chart-7: #a3e635;
+  --chart-8: #fb7185;
+  --chart-grid: rgb(255 255 255 / 0.08);
+  --chart-tick: #9aa3b8;
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 14px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 18px 44px rgb(0 0 0 / 0.6);
+}
+
+/* ---- dark: follows system when no manual choice stored ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #0c0e14;
+    --surface: #151823;
+    --surface-2: #1c2030;
+    --surface-3: #252a3d;
+    --border: #262b3b;
+    --border-strong: #39405a;
+    --text: #f2f4f8;
+    --text-muted: #9aa3b8;
+    --text-faint: #6b7488;
+    --inverse: #0c0e14;
+
+    --accent: #6366f1;
+    --accent-hover: #7c7ff5;
+    --accent-active: #8b8df7;
+    --accent-soft: #1e2140;
+    --accent-soft-border: #333a70;
+    --accent-ring: rgb(99 102 241 / 0.45);
+
+    --income: #32d17d;
+    --income-soft: #11291d;
+    --income-border: #1c4430;
+    --expense: #ff6b6b;
+    --expense-soft: #2c1618;
+    --expense-border: #4a2226;
+    --warning: #fbbf24;
+    --warning-soft: #2b2110;
+
+    --chart-1: #818cf8;
+    --chart-2: #38bdf8;
+    --chart-3: #2dd4bf;
+    --chart-4: #fbbf24;
+    --chart-5: #f472b6;
+    --chart-6: #a78bfa;
+    --chart-7: #a3e635;
+    --chart-8: #fb7185;
+    --chart-grid: rgb(255 255 255 / 0.08);
+    --chart-tick: #9aa3b8;
+
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.5);
+    --shadow-md: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 18px 44px rgb(0 0 0 / 0.6);
+  }
+}

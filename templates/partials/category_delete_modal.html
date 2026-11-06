@@ -1,0 +1,46 @@
+<dialog id="category-delete-dialog" class="category-dialog" aria-labelledby="category-delete-title">
+    <form method="post" id="category-delete-form" data-json-form class="modal confirm-modal category-confirm-modal">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+            <div class="confirm-icon"><i data-lucide="trash-2"></i></div>
+            <h2 class="confirm-title" id="category-delete-title">Delete category?</h2>
+            <p class="confirm-text" id="category-delete-summary"></p>
+
+            <div id="category-delete-choices" hidden>
+                <div class="category-choice">
+                    <label class="choice">
+                        <input type="radio" name="action" value="reassign" checked>
+                        <span>Reassign to another category</span>
+                    </label>
+                    <select class="select" id="category-delete-target" name="target_category_id"
+                            aria-label="Category to move transactions and budgets to"></select>
+                    <p class="confirm-hint" id="category-budget-note"></p>
+                    <p class="confirm-hint">
+                        All transactions (including recently deleted ones) and the budget
+                        will be moved before the category is deleted.
+                    </p>
+                </div>
+                <div class="category-choice">
+                    <label class="choice">
+                        <input type="radio" name="action" value="archive">
+                        <span>Archive instead</span>
+                    </label>
+                    <p class="confirm-hint">
+                        Keeps every old transaction and chart exactly as it is, but hides
+                        this category from pickers. You can restore it later.
+                    </p>
+                </div>
+            </div>
+
+            <p class="confirm-hint" id="category-delete-unused-hint">
+                This category is not used anywhere. It will move to "Recently deleted"
+                and can be undone.
+            </p>
+            <p class="field-error" id="category-delete-error" role="alert"></p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn btn-danger" id="category-delete-submit">Delete</button>
+        </div>
+    </form>
+</dialog>

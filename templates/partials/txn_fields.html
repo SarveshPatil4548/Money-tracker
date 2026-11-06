@@ -1,0 +1,55 @@
+{% set idp = idp if idp is defined else '' %}
+
+<div class="field">
+    <span class="field-label" id="{{ idp }}type-label">Type</span>
+    <div class="segmented" role="radiogroup" aria-labelledby="{{ idp }}type-label">
+        <label data-type="expense">
+            <input type="radio" name="type" value="expense" checked>
+            <span><i data-lucide="arrow-up-right"></i> Expense</span>
+        </label>
+        <label data-type="income">
+            <input type="radio" name="type" value="income">
+            <span><i data-lucide="arrow-down-right"></i> Income</span>
+        </label>
+    </div>
+</div>
+
+<div class="field">
+    <label for="{{ idp }}amount">Amount</label>
+    <div class="amount-wrap">
+        <span class="currency" aria-hidden="true">₹</span>
+        <input type="number" inputmode="decimal" step="0.01" min="0" name="amount"
+               id="{{ idp }}amount" placeholder="0.00" autocomplete="off"
+               aria-describedby="{{ idp }}amount-error" required>
+    </div>
+    <p class="field-error" id="{{ idp }}amount-error" data-error-for="amount" role="alert"></p>
+</div>
+
+<div class="field">
+    <label for="{{ idp }}category_id">Category</label>
+    <select name="category_id" id="{{ idp }}category_id"
+            aria-describedby="{{ idp }}category_id-error" required>
+        <option value="">Select a category</option>
+        {% for c in categories %}
+        <option value="{{ c.id }}" data-type="{{ c.type }}">{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    <p class="field-error" id="{{ idp }}category_id-error" data-error-for="category_id" role="alert"></p>
+    <p class="confirm-hint txn-archived-note" data-archived-note hidden>
+        This transaction uses an archived category. Saving keeps it on this entry.
+    </p>
+</div>
+
+<div class="form-row">
+    <div class="field">
+        <label for="{{ idp }}txn_date">Date</label>
+        <input type="date" class="input" name="txn_date" id="{{ idp }}txn_date"
+               value="{{ today }}" aria-describedby="{{ idp }}txn_date-error" required>
+        <p class="field-error" id="{{ idp }}txn_date-error" data-error-for="txn_date" role="alert"></p>
+    </div>
+    <div class="field">
+        <label for="{{ idp }}description">Note <span class="hint">(optional)</span></label>
+        <input type="text" class="input" name="description" id="{{ idp }}description"
+               maxlength="120" placeholder="e.g. Coffee with Sam" autocomplete="off">
+    </div>
+</div>

@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*.pyc
+.venv/
+venv/
+node_modules/
+*.db
+*.sqlite
+.pytest_cache/
+.DS_Store
+alembic/versions/__pycache__/
+
+# database dumps written by scripts/backup.py
+backups/
+*.sql
+!schema.sql

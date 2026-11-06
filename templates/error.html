@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · Money Tracker{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="empty error-state">
+        <span class="empty-icon"><i data-lucide="{{ 'server-crash' if code == 500 else 'map-pin-off' }}"></i></span>
+        <p class="empty-title">{{ code }} — {{ message }}</p>
+        <p class="empty-sub">Everything else is still where you left it.</p>
+        <a class="btn" href="{{ url_for('dashboard') }}">
+            <i data-lucide="layout-dashboard"></i> Back to dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block dialogs %}
+    {% include "partials/confirm_delete.html" %}
+{% endblock %}

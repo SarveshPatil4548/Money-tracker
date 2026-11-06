@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}[MoneyWise] | Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>Overview</h1>
+        <p class="sub">Here's how your money is moving this month.</p>
+    </div>
+    <div class="actions">
+        <a class="btn" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+            <i data-lucide="plus"></i> Add transaction
+        </a>
+    </div>
+</div>
+
+{% set savings = income - expenses %}
+{% if budget_overview and (budget_overview.over_budgets or budget_overview.overall_status != 'normal') %}
+<div class="alert-banner {{ 'danger' if budget_overview.overall_status == 'over' or budget_overview.over_budgets else 'warning' }}">
+    <span class="alert-icon">
+        <i data-lucide="{{ 'alert-triangle' if budget_overview.overall_status == 'over' or budget_overview.over_budgets else 'bell' }}"></i>
+    </span>
+    <div class="alert-copy">
+        {% if budget_overview.overall_status == 'over' %}
+        <strong>You're over your overall monthly budget</strong>
+        <span>{{ budget_overview.overall_spent|inr }} spent against {{ budget_overview.overall_limit|inr }}.</span>
+        {% elif budget_overview.over_budgets %}
+        <strong>{{ budget_overview.over_budgets|length }} categor{{ 'y is' if budget_overview.over_budgets|length == 1 else 'ies are' }} over budget</strong>
+        <span>Review the limits before the month ends.</span>
+        {% else %}
+        <strong>You've used {{ budget_overview.overall_percent|round|int }}% of this month's budget</strong>
+        <span>{{ budget_overview.overall_remaining|inr }} left with {{ budget_overview.days_left }} day{{ 's' if budget_overview.days_left != 1 }} to go.</span>
+        {% endif %}
+    </div>
+    <a class="btn btn-sm" href="{{ url_for('budgets') }}">Review budgets</a>
+</div>
+{% endif %}
+<div class="stats">
+    <article class="stat">
+        <span class="stat-icon"><i data-lucide="wallet"></i></span>
+        <span class="stat-label">Total balance</span>
+        <span class="stat-value {{ 'income' if balance > 0 else 'expense' if balance < 0 else '' }}">{{ balance|inr }}</span>
+        <span class="stat-foot">{{ txn_count }} transaction{{ 's' if txn_count != 1 }} on record</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon income"><i data-lucide="trending-up"></i></span>
+        <span class="stat-label">Income this month</span>
+        <span class="stat-value income">{{ income|inr }}</span>
+        <span class="stat-foot">Money in since {{ today[:8] }}1<sup>st</sup></span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon expense"><i data-lucide="trending-down"></i></span>
+        <span class="stat-label">Expenses this month</span>
+        <span class="stat-value expense">{{ expenses|inr }}</span>
+        <span class="stat-foot">Money out this month</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon"><i data-lucide="piggy-bank"></i></span>
+        <span class="stat-label">Savings this month</span>
+        <span class="stat-value {{ 'income' if savings > 0 else 'expense' if savings < 0 else '' }}">{{ savings|inr }}</span>
+        <span class="stat-foot">Income minus expenses</span>
+    </article>
+</div>
+
+<div class="grid-2">
+    <section class="card">
+        <div class="section-head">
+            <h2>Income vs expenses</h2>
+            <span class="meta">Last 6 months</span>
+        </div>
+        {% if txn_count %}
+        <div class="chart-wrap chart-panel">
+            <canvas id="trendChart" role="img"
+                    aria-label="Bar chart of income and expenses for the last six months"></canvas>
+            <div class="chart-state is-visible" id="trendChart-state">
+                <div class="skeleton skeleton-bar"></div>
+                <span>Loading chart…</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty">
+            <span class="empty-icon"><i data-lucide="bar-chart-3"></i></span>
+            <p class="empty-title">No trends yet</p>
+            <p class="empty-sub">Once you log a few transactions, your income and spending history shows up here.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <div class="section-head">
+            <h2>Spending by category</h2>
+            <span class="meta">This month</span>
+        </div>
+        {% if spending_by_category %}
+        <div class="chart-wrap donut chart-panel">
+            <canvas id="spendingChart" role="img"
+                    aria-label="Donut chart of spending by category this month"></canvas>
+            <div class="chart-state is-visible" id="spendingChart-state">
+                <div class="skeleton skeleton-bar"></div>
+                <span>Loading chart…</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty">
+            <span class="empty-icon"><i data-lucide="pie-chart"></i></span>
+            <p class="empty-title">Nothing spent yet</p>
+            <p class="empty-sub">Add an expense this month and it'll appear here, broken down by category.</p>
+        </div>
+        {% endif %}
+    </section>
+</div>
+
+<section class="card">
+    <div class="section-head">
+        <h2>Budgets</h2>
+        <a class="link" href="{{ url_for('budgets') }}">Manage</a>
+    </div>
+    {% if budgets %}
+    <div class="budget-list">
+        {% for b in budgets %}
+        {% set status = 'over' if b.status == 'over' else ('close' if b.status == 'warning' else 'good') %}
+        <div class="budget-row">
+            <div class="budget-top">
+                <span class="budget-name">
+                    <span class="txn-icon expense"><i data-lucide="{{ icon_for(b.name) }}"></i></span>
+                    {{ b.name }}
+                </span>
+                <span class="budget-side {{ status }}">
+                    {% if b.status == 'over' %}{{ b.over_amount|inr }} over
+                    {% else %}{{ b.remaining|inr }} left{% endif %}
+                    · {{ b.spent|inr }} of {{ b.effective_limit|inr }}
+                </span>
+            </div>
+            <div class="progress" role="progressbar" aria-valuenow="{{ b.percent|round|int }}"
+                 aria-valuemin="0" aria-valuemax="100" aria-label="{{ b.name }} budget usage">
+                <div class="progress-fill {{ status }}" style="width: {{ [b.percent, 100]|min }}%;"></div>
+            </div>
+            <div class="budget-note">{{ b.percent|round|int }}% of this month's budget used</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="target"></i></span>
+        <p class="empty-title">No budgets yet</p>
+        <p class="empty-sub">Set a monthly limit per category and track your progress here.</p>
+        <a class="btn btn-secondary" href="{{ url_for('budgets') }}">Create a budget</a>
+    </div>
+    {% endif %}
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>Recent activity</h2>
+        <a class="link" href="{{ url_for('transactions') }}">See all</a>
+    </div>
+    {% if recent %}
+    <ul class="txn-list">
+        {% for t in recent %}
+        <li class="txn-row with-date">
+            <span class="txn-icon {{ t.type }}"><i data-lucide="{{ icon_for(t.category) }}"></i></span>
+            <div class="txn-main">
+                <div class="txn-title">{{ t.category }}</div>
+                <div class="txn-note">{{ t.description or 'No note' }}</div>
+            </div>
+            <div class="txn-side">
+                <div class="txn-side-stack">
+                    <span class="txn-amount {{ t.type }}">{{ '+' if t.type == 'income' else '-' }}{{ t.amount|inr }}</span>
+                    <div class="txn-mobile-date">{{ t.txn_date }}</div>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="receipt-text"></i></span>
+        <p class="empty-title">No transactions yet</p>
+        <p class="empty-sub">Log your first entry and your activity will start building up here.</p>
+        <a class="btn" href="{{ url_for('add_transaction') }}" data-dialog="txn-dialog">
+            <i data-lucide="plus"></i> Add your first transaction
+        </a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if txn_count %}
+<script>
+    window.DASHBOARD = {
+        labels: {{ chart_labels | tojson }},
+        periods: {{ chart_periods | tojson }},
+        income: {{ series_income | tojson }},
+        expenses: {{ series_expenses | tojson }},
+        spendingLabels: {{ spending_by_category | map(attribute='name') | list | tojson }},
+        spendingValues: {{ spending_by_category | map(attribute='total') | list | tojson }}
+    };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+{% endif %}
+{% endblock %}

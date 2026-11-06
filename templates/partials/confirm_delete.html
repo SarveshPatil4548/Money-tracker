@@ -1,0 +1,18 @@
+<dialog id="delete-dialog" aria-labelledby="delete-confirm-title">
+    <form method="post" id="delete-confirm-form" class="modal confirm-modal">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+            <div class="confirm-icon"><i data-lucide="trash-2"></i></div>
+            <h2 class="confirm-title" id="delete-confirm-title">Delete this item?</h2>
+            <p class="confirm-text" id="delete-confirm-desc">This can't be undone.</p>
+            <p class="confirm-hint">
+                The item stays in the database and can be restored from the
+                relevant "Recently deleted" section.
+            </p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn btn-danger">Delete</button>
+        </div>
+    </form>
+</dialog>
