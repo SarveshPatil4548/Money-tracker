@@ -102,6 +102,9 @@
             <a href="{{ url_for('budgets') }}" class="{{ 'active' if request.endpoint == 'budgets' }}">
                 <i data-lucide="target"></i> Budgets
             </a>
+            <a href="{{ url_for('piggy') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('piggy') }}">
+                <i data-lucide="piggy-bank"></i> Piggy Bank
+            </a>
             <a href="{{ url_for('categories') }}" class="{{ 'active' if request.endpoint == 'categories' }}">
                 <i data-lucide="tags"></i> Categories
             </a>
@@ -151,6 +154,9 @@
         </a>
         <a href="{{ url_for('budgets') }}" class="{{ 'active' if request.endpoint == 'budgets' }}">
             <i data-lucide="target"></i> Budgets
+        </a>
+        <a href="{{ url_for('piggy') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('piggy') }}">
+            <i data-lucide="piggy-bank"></i> Piggy
         </a>
         <a href="{{ url_for('categories') }}" class="{{ 'active' if request.endpoint == 'categories' }}">
             <i data-lucide="tags"></i> Tags

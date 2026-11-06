@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block title %}[MoneyWise] | Piggy Bank{% endblock %}
+{% block content %}
+{% set bank = summary.bank %}
+{% set balance_value = summary.balance|float %}
+<div class="page-head piggy-head">
+    <div>
+        <h1><i data-lucide="piggy-bank" class="piggy-title-icon"></i> {{ bank.name }}</h1>
+        <p class="sub">
+            A separate savings pot for {{ bank.contributor_me }} and {{ bank.contributor_her }}.
+            It never changes your income, expenses or balance.
+        </p>
+    </div>
+    <div class="actions piggy-actions">
+        <form class="month-switcher" method="get" action="{{ url_for('piggy') }}">
+            <a class="icon-btn" href="{{ url_for('piggy', month=previous_month) }}" aria-label="Previous month">
+                <i data-lucide="chevron-left"></i>
+            </a>
+            <input type="month" name="month" id="piggy-month" value="{{ month }}"
+                   aria-label="Choose a month" data-piggy-month>
+            <a class="icon-btn" href="{{ url_for('piggy', month=next_month) }}" aria-label="Next month">
+                <i data-lucide="chevron-right"></i>
+            </a>
+            <noscript><button type="submit" class="btn btn-sm">Go</button></noscript>
+        </form>
+        <a class="btn btn-secondary" href="{{ url_for('export_piggy_csv', month=month, contributor=contributor, type=entry_type) }}">
+            <i data-lucide="file-spreadsheet"></i> CSV
+        </a>
+        <button type="button" class="icon-btn" data-dialog="piggy-settings-dialog"
+                aria-label="Piggy bank settings" title="Piggy bank settings">
+            <i data-lucide="settings"></i>
+        </button>
+        <button type="button" class="btn" data-dialog="piggy-entry-dialog"
+                data-entry-date="{{ today }}" data-month="{{ month }}">
+            <i data-lucide="plus"></i> Add entry
+        </button>
+    </div>
+</div>
+
+<div class="stats piggy-stats">
+    <article class="stat">
+        <span class="stat-icon"><i data-lucide="piggy-bank"></i></span>
+        <span class="stat-label">Piggy balance</span>
+        <span class="stat-value {{ 'income' if balance_value > 0 else 'expense' if balance_value < 0 else '' }}">
+            {{ summary.balance|inr }}
+        </span>
+        <span class="stat-foot">Everything saved so far, minus withdrawals</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon income"><i data-lucide="trending-up"></i></span>
+        <span class="stat-label">Saved in {{ month_label }}</span>
+        <span class="stat-value {{ 'income' if summary.month_net|float > 0 else 'expense' if summary.month_net|float < 0 else '' }}">
+            {{ summary.month_net|inr }}
+        </span>
+        <span class="stat-foot">{{ summary.month_entry_count }} entr{{ 'y' if summary.month_entry_count == 1 else 'ies' }} this month</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon income"><i data-lucide="arrow-down-circle"></i></span>
+        <span class="stat-label">Deposits this month</span>
+        <span class="stat-value income">{{ summary.month_deposits|inr }}</span>
+        <span class="stat-foot">Daily target {{ summary.daily_amount|inr }} per contributor</span>
+    </article>
+
+    <article class="stat">
+        <span class="stat-icon expense"><i data-lucide="arrow-up-circle"></i></span>
+        <span class="stat-label">Withdrawals this month</span>
+        <span class="stat-value expense">{{ summary.month_withdrawals|inr }}</span>
+        <span class="stat-foot">Withdrawals can never take the balance below zero</span>
+    </article>
+</div>
+
+<div class="grid-2 piggy-grid">
+    <section class="card piggy-calendar-card">
+        <div class="section-head">
+            <h2>Daily calendar</h2>
+            <span class="meta">{{ month_label }}</span>
+        </div>
+        <div class="piggy-calendar" role="grid" aria-label="Piggy bank calendar for {{ month_label }}">
+            <div class="cal-weekhead" role="row">
+                <span role="columnheader">Mon</span>
+                <span role="columnheader">Tue</span>
+                <span role="columnheader">Wed</span>
+                <span role="columnheader">Thu</span>
+                <span role="columnheader">Fri</span>
+                <span role="columnheader">Sat</span>
+                <span role="columnheader">Sun</span>
+            </div>
+            <div class="cal-grid" role="rowgroup">
+                {% for week in summary.weeks %}
+                    {% for day in week %}
+                        {% if day %}
+                        <button type="button"
+                                class="cal-day {{ 'is-today' if day.is_today }} {{ 'is-future' if day.is_future }} {{ 'has-entries' if day.entry_count }}"
+                                data-dialog="piggy-entry-dialog"
+                                data-entry-date="{{ day.date }}"
+                                data-month="{{ month }}"
+                                aria-label="{{ day.date }}: deposits {{ day.deposits|inr }}, withdrawals {{ day.withdrawals|inr }}, balance {{ day.balance|inr }}">
+                            <span class="cal-date">{{ day.day }}</span>
+                            <span class="cal-values">
+                                {% if day.deposits|float > 0 %}<span class="cal-deposit">+{{ day.deposits|inr }}</span>{% endif %}
+                                {% if day.withdrawals|float > 0 %}<span class="cal-withdrawal">-{{ day.withdrawals|inr }}</span>{% endif %}
+                            </span>
+                            <span class="cal-balance">{{ day.balance|inr }}</span>
+                            {% if day.entry_count %}<span class="cal-dot" aria-hidden="true"></span>{% endif %}
+                        </button>
+                        {% else %}
+                        <span class="cal-day is-empty" aria-hidden="true"></span>
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+        <p class="hint piggy-calendar-hint">Tap any day to add a deposit or withdrawal for that date.</p>
+    </section>
+
+    <div class="piggy-aside">
+        <section class="card">
+            <div class="section-head">
+                <h2>This month</h2>
+                <span class="meta">{{ month_label }}</span>
+            </div>
+            <dl class="piggy-kv">
+                <div><dt>Opening balance</dt><dd class="num">{{ summary.opening_balance|inr }}</dd></div>
+                <div><dt>Deposits</dt><dd class="num positive">+{{ summary.month_deposits|inr }}</dd></div>
+                <div><dt>Withdrawals</dt><dd class="num negative">-{{ summary.month_withdrawals|inr }}</dd></div>
+                <div class="total"><dt>Closing balance</dt><dd class="num">{{ summary.closing_balance|inr }}</dd></div>
+            </dl>
+            {% set expected = summary.expected_to_date|float %}
+            {% set saved = summary.month_deposits|float %}
+            {% set pct = (saved / expected * 100) if expected > 0 else 0 %}
+            <div class="piggy-progress">
+                <div class="piggy-progress-head">
+                    <span>Daily saving target</span>
+                    <span class="num">{{ summary.month_deposits|inr }} of {{ summary.expected_to_date|inr }}</span>
+                </div>
+                <div class="progress" role="progressbar" aria-valuenow="{{ pct|round|int }}"
+                     aria-valuemin="0" aria-valuemax="100" aria-label="Progress towards the daily saving target">
+                    <div class="progress-fill {{ 'over' if pct >= 100 else '' }}" style="width: {{ [pct, 100]|min }}%;"></div>
+                </div>
+                <p class="budget-note">
+                    Based on {{ summary.daily_amount|inr }} per contributor for
+                    {{ summary.days_elapsed }} day{{ 's' if summary.days_elapsed != 1 }}.
+                </p>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="section-head">
+                <h2>Contributors</h2>
+                <span class="meta">All time</span>
+            </div>
+            <div class="piggy-contributors">
+                {% for person in summary.contributors %}
+                <div class="piggy-person" data-contributor="{{ person.key }}">
+                    <span class="piggy-avatar {{ person.key }}">{{ person.name[:1]|upper }}</span>
+                    <div class="piggy-person-main">
+                        <strong>{{ person.name }}</strong>
+                        <span>{{ person.month_count }} entr{{ 'y' if person.month_count == 1 else 'ies' }} this month</span>
+                    </div>
+                    <div class="piggy-person-side">
+                        <span class="num">{{ person.balance|inr }}</span>
+                        <span class="piggy-person-month {{ 'positive' if person.month_net|float > 0 else 'negative' if person.month_net|float < 0 else '' }}">
+                            {{ '+' if person.month_net|float > 0 }}{{ person.month_net|inr }}
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<section class="card piggy-chart-card">
+    <div class="section-head">
+        <h2>Savings over time</h2>
+        <span class="meta">Last 6 months</span>
+    </div>
+    {% set series_total = (series|map(attribute='deposits')|sum) + (series|map(attribute='withdrawals')|sum) %}
+    {% if series_total > 0 %}
+    <div class="chart-wrap chart-panel">
+        <canvas id="piggyChart" role="img"
+                aria-label="Bar chart of piggy-bank deposits and withdrawals and a line for the balance over the last six months"></canvas>
+        <div class="chart-state is-visible" id="piggyChart-state">
+            <div class="skeleton skeleton-bar"></div>
+            <span>Loading chart…</span>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="bar-chart-3"></i></span>
+        <p class="empty-title">No savings history yet</p>
+        <p class="empty-sub">Add the first deposit and the monthly trend will appear here.</p>
+    </div>
+    {% endif %}
+</section>
+
+<section class="card piggy-entries-card">
+    <div class="section-head">
+        <h2>Entries</h2>
+        <span class="meta">{{ entries|length }} in {{ month_label }}</span>
+    </div>
+
+    {% if summary.entries or entries %}
+    <div class="toolbar piggy-toolbar">
+        <div class="filter-field field-search">
+            <label for="piggy-search">Search</label>
+            <div class="search-field">
+                <i data-lucide="search"></i>
+                <input type="search" class="input" id="piggy-search" placeholder="Name or note"
+                       autocomplete="off" data-piggy-search>
+            </div>
+        </div>
+        <div class="filter-field">
+            <label for="piggy-contributor">Contributor</label>
+            <select class="select" id="piggy-contributor" data-piggy-contributor>
+                <option value="all">Both</option>
+                <option value="me" {{ 'selected' if contributor == 'me' }}>{{ bank.contributor_me }}</option>
+                <option value="her" {{ 'selected' if contributor == 'her' }}>{{ bank.contributor_her }}</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label for="piggy-type">Type</label>
+            <select class="select" id="piggy-type" data-piggy-type>
+                <option value="all">All entries</option>
+                <option value="deposit" {{ 'selected' if entry_type == 'deposit' }}>Deposits</option>
+                <option value="withdrawal" {{ 'selected' if entry_type == 'withdrawal' }}>Withdrawals</option>
+            </select>
+        </div>
+    </div>
+
+    <ul class="txn-list piggy-list" id="piggy-results" data-piggy-list>
+        {% for entry in entries %}
+        <li class="txn-row piggy-entry-row"
+            data-piggy-row
+            data-id="{{ entry.id }}"
+            data-contributor="{{ entry.contributor }}"
+            data-contributor-name="{{ entry.contributor_name }}"
+            data-type="{{ entry.entry_type }}"
+            data-amount="{{ entry.amount }}"
+            data-date="{{ entry.entry_date }}"
+            data-note="{{ entry.note }}"
+            data-text="{{ (entry.contributor_name ~ ' ' ~ entry.entry_type ~ ' ' ~ entry.note)|lower }}"
+            data-edit-url="{{ url_for('edit_piggy_entry', entry_id=entry.id) }}"
+            data-month="{{ month }}">
+            <span class="txn-icon {{ 'income' if entry.entry_type == 'deposit' else 'expense' }}">
+                <i data-lucide="{{ 'arrow-down-circle' if entry.entry_type == 'deposit' else 'arrow-up-circle' }}"></i>
+            </span>
+            <div class="txn-main">
+                <div class="txn-title">
+                    {{ entry.contributor_name }}
+                    <span class="piggy-type-tag {{ entry.entry_type }}">{{ 'Deposit' if entry.entry_type == 'deposit' else 'Withdrawal' }}</span>
+                </div>
+                <div class="txn-note">{{ entry.note or 'No note' }} · {{ entry.entry_date }}</div>
+            </div>
+            <div class="txn-side">
+                <div class="txn-side-stack">
+                    <span class="txn-amount {{ 'income' if entry.entry_type == 'deposit' else 'expense' }}">
+                        {{ '+' if entry.entry_type == 'deposit' else '-' }}{{ entry.amount|inr }}
+                    </span>
+                </div>
+                <div class="txn-actions">
+                    <button type="button" class="icon-btn" data-edit-piggy
+                            data-dialog="piggy-entry-dialog"
+                            data-edit-url="{{ url_for('edit_piggy_entry', entry_id=entry.id) }}"
+                            aria-label="Edit {{ entry.contributor_name }} {{ entry.entry_type }}">
+                        <i data-lucide="pencil"></i>
+                    </button>
+                    <button type="button" class="icon-btn danger"
+                            data-delete-url="{{ url_for('delete_piggy_entry', entry_id=entry.id) }}"
+                            data-delete-label="{{ entry.contributor_name }} · {{ entry.entry_type|capitalize }} · {{ entry.amount|inr }}"
+                            data-month="{{ month }}"
+                            aria-label="Delete {{ entry.contributor_name }} {{ entry.entry_type }}">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <div class="empty" id="piggy-filtered-empty" hidden>
+        <span class="empty-icon"><i data-lucide="search-x"></i></span>
+        <p class="empty-title">No matching entries</p>
+        <p class="empty-sub">Try a different name, type or month.</p>
+        <button type="button" class="btn btn-secondary" data-piggy-clear>Clear filters</button>
+    </div>
+    {% else %}
+    <div class="empty">
+        <span class="empty-icon"><i data-lucide="piggy-bank"></i></span>
+        <p class="empty-title">Nothing saved in {{ month_label }}</p>
+        <p class="empty-sub">
+            Add a deposit for {{ bank.contributor_me }} or {{ bank.contributor_her }}.
+            You can also tap a day on the calendar above.
+        </p>
+        <button type="button" class="btn" data-dialog="piggy-entry-dialog"
+                data-entry-date="{{ today }}" data-month="{{ month }}">
+            <i data-lucide="plus"></i> Add the first entry
+        </button>
+    </div>
+    {% endif %}
+</section>
+
+{% if deleted %}
+<section class="card deleted-card" aria-labelledby="piggy-deleted-heading">
+    <div class="section-head">
+        <h2 id="piggy-deleted-heading">
+            <i data-lucide="undo-2"></i> Recently deleted
+            <span class="section-hint">Deleted, not erased — Undo puts them back.</span>
+        </h2>
+    </div>
+    <ul class="txn-list deleted-list">
+        {% for entry in deleted %}
+        <li class="txn-row is-deleted">
+            <span class="txn-icon {{ 'income' if entry.entry_type == 'deposit' else 'expense' }}">
+                <i data-lucide="{{ 'arrow-down-circle' if entry.entry_type == 'deposit' else 'arrow-up-circle' }}"></i>
+            </span>
+            <div class="txn-main">
+                <div class="txn-title">{{ entry.contributor_name }} · {{ entry.entry_type|capitalize }}</div>
+                <div class="txn-note">{{ entry.note or 'No note' }} · deleted {{ entry.deleted_at }}</div>
+            </div>
+            <div class="txn-side">
+                <span class="txn-amount {{ 'income' if entry.entry_type == 'deposit' else 'expense' }}">
+                    {{ '+' if entry.entry_type == 'deposit' else '-' }}{{ entry.amount|inr }}
+                </span>
+                <div class="txn-actions">
+                    <form method="post" action="{{ url_for('undo_piggy_entry', entry_id=entry.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="month" value="{{ month }}">
+                        <button type="submit" class="btn btn-secondary btn-sm">
+                            <i data-lucide="undo-2"></i> Undo
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block dialogs %}
+{{ super() }}
+{% set bank = summary.bank %}
+<dialog id="piggy-entry-dialog" aria-labelledby="piggy-entry-title">
+    <form method="post" action="{{ url_for('add_piggy_entry') }}"
+          data-default-action="{{ url_for('add_piggy_entry') }}"
+          class="modal piggy-form" id="piggy-entry-form" data-piggy-json>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <input type="hidden" name="allow_duplicate" value="0">
+        <div class="modal-head">
+            <h2 id="piggy-entry-title" data-piggy-entry-title>Add piggy-bank entry</h2>
+            <button type="button" class="icon-btn" data-dialog-close aria-label="Close dialog">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <fieldset class="chips piggy-fieldset">
+                <legend>Contributor</legend>
+                <div class="chips-row">
+                    <label class="chip">
+                        <input type="radio" name="contributor" value="me" checked>
+                        <span class="chip-face"><i data-lucide="user-round"></i> {{ bank.contributor_me }}</span>
+                    </label>
+                    <label class="chip">
+                        <input type="radio" name="contributor" value="her">
+                        <span class="chip-face"><i data-lucide="user-round"></i> {{ bank.contributor_her }}</span>
+                    </label>
+                </div>
+            </fieldset>
+
+            <fieldset class="chips piggy-fieldset">
+                <legend>Entry type</legend>
+                <div class="chips-row">
+                    <label class="chip">
+                        <input type="radio" name="entry_type" value="deposit" checked>
+                        <span class="chip-face"><i data-lucide="arrow-down-circle"></i> Deposit</span>
+                    </label>
+                    <label class="chip">
+                        <input type="radio" name="entry_type" value="withdrawal">
+                        <span class="chip-face"><i data-lucide="arrow-up-circle"></i> Withdrawal</span>
+                    </label>
+                </div>
+            </fieldset>
+
+            <div class="field">
+                <label for="piggy-amount">Amount</label>
+                <div class="amount-wrap">
+                    <span class="currency" aria-hidden="true">₹</span>
+                    <input type="number" inputmode="decimal" step="0.01" min="0.01"
+                           id="piggy-amount" name="amount" placeholder="e.g. 50" required>
+                </div>
+                <span class="field-error" data-piggy-error></span>
+            </div>
+
+            <div class="form-grid piggy-form-grid">
+                <div class="field">
+                    <label for="piggy-date">Date</label>
+                    <input type="date" class="input" id="piggy-date" name="entry_date" value="{{ today }}" required>
+                </div>
+                <div class="field">
+                    <label for="piggy-daily-hint">Daily target</label>
+                    <input type="text" class="input" id="piggy-daily-hint"
+                           value="{{ summary.daily_amount|inr }}" readonly tabindex="-1">
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="piggy-note">Note <span class="hint">optional</span></label>
+                <input type="text" class="input" id="piggy-note" name="note"
+                       maxlength="255" placeholder="e.g. Week 1 savings">
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn">
+                <i data-lucide="check"></i> Save entry
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="piggy-settings-dialog" aria-labelledby="piggy-settings-title">
+    <form method="post" action="{{ url_for('update_piggy_settings') }}"
+          class="modal piggy-form" data-piggy-json>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <div class="modal-head">
+            <h2 id="piggy-settings-title">Piggy bank settings</h2>
+            <button type="button" class="icon-btn" data-dialog-close aria-label="Close dialog">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label for="piggy-name">Piggy bank name</label>
+                <input type="text" class="input" id="piggy-name" name="name"
+                       maxlength="120" value="{{ bank.name }}" required>
+            </div>
+            <div class="field">
+                <label for="piggy-daily">Daily amount per contributor</label>
+                <div class="amount-wrap">
+                    <span class="currency" aria-hidden="true">₹</span>
+                    <input type="number" inputmode="decimal" step="0.01" min="0.01"
+                           id="piggy-daily" name="daily_amount" value="{{ bank.daily_amount }}" required>
+                </div>
+            </div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="piggy-me">First contributor</label>
+                    <input type="text" class="input" id="piggy-me" name="contributor_me"
+                           maxlength="80" value="{{ bank.contributor_me }}" required>
+                </div>
+                <div class="field">
+                    <label for="piggy-her">Second contributor</label>
+                    <input type="text" class="input" id="piggy-her" name="contributor_her"
+                           maxlength="80" value="{{ bank.contributor_her }}" required>
+                </div>
+            </div>
+            <p class="hint">Changing these names never changes any saved entry or balance.</p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Cancel</button>
+            <button type="submit" class="btn">
+                <i data-lucide="check"></i> Save settings
+            </button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="piggy-duplicate-dialog" aria-labelledby="piggy-duplicate-title">
+    <div class="modal confirm-modal">
+        <div class="modal-body">
+            <div class="confirm-icon warning"><i data-lucide="copy-check"></i></div>
+            <h2 class="confirm-title" id="piggy-duplicate-title">Deposit already recorded</h2>
+            <p class="confirm-text" id="piggy-duplicate-text">
+                This contributor already has a deposit on that date. Add another anyway?
+            </p>
+        </div>
+        <div class="modal-foot">
+            <button type="button" class="btn btn-secondary" data-piggy-duplicate-cancel>Cancel</button>
+            <button type="button" class="btn" data-piggy-duplicate-confirm>Add anyway</button>
+        </div>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script>
+    window.PIGGY = {
+        series: {{ series | tojson }},
+        month: {{ month | tojson }}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/piggy.js') }}"></script>
+{% endblock %}

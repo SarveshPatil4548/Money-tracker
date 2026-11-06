@@ -35,6 +35,19 @@
     <a class="btn btn-sm" href="{{ url_for('budgets') }}">Review budgets</a>
 </div>
 {% endif %}
+{% if piggy %}
+<div class="alert-banner piggy-banner">
+    <span class="alert-icon"><i data-lucide="piggy-bank"></i></span>
+    <div class="alert-copy">
+        <strong>{{ piggy.bank.name }} · {{ piggy.balance|inr }} saved</strong>
+        <span>
+            {{ piggy.month_deposits|inr }} deposited and {{ piggy.month_withdrawals|inr }} withdrawn this month.
+            This pot is separate from your balance above.
+        </span>
+    </div>
+    <a class="btn btn-sm" href="{{ url_for('piggy') }}">Open piggy bank</a>
+</div>
+{% endif %}
 <div class="stats">
     <article class="stat">
         <span class="stat-icon"><i data-lucide="wallet"></i></span>

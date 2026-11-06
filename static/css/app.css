@@ -130,7 +130,7 @@ h1, h2, h3, h4 { line-height: 1.25; font-weight: var(--weight-semibold); letter-
   left: 0; right: 0; bottom: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--space-1);
   padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -1225,3 +1225,187 @@ body.modal-open { overflow: hidden; }
 }
 .check-row input { width: 16px; height: 16px; accent-color: var(--accent); }
 .budget-form .field-error { margin-top: var(--space-2); }
+
+/* ---------- piggy bank page ---------- */
+.piggy-head { align-items: flex-start; }
+.piggy-head h1 { display: flex; align-items: center; gap: var(--space-2); }
+.piggy-title-icon { width: 22px; height: 22px; color: var(--accent); }
+.piggy-actions { flex-wrap: wrap; align-items: center; }
+.piggy-stats { margin-bottom: var(--space-4); }
+.piggy-grid { margin-bottom: var(--space-4); }
+.piggy-grid > .card { margin-bottom: 0; }
+.piggy-aside { display: flex; flex-direction: column; gap: var(--space-4); }
+.piggy-aside .card { margin-bottom: 0; }
+.piggy-chart-card,
+.piggy-entries-card { margin-top: var(--space-4); }
+
+.piggy-calendar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+.cal-weekhead {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.cal-weekhead span {
+  padding: var(--space-2) 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+.cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  min-height: 66px;
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.cal-day:hover { background: var(--surface-2); }
+.cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cal-day.is-empty { background: var(--surface-2); cursor: default; opacity: 0.55; }
+.cal-day.is-future { color: var(--text-faint); }
+.cal-day.is-today { box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-day.is-today .cal-date { color: var(--accent); font-weight: var(--weight-bold); }
+.cal-date { font-size: var(--text-xs); font-weight: var(--weight-semibold); }
+.cal-values {
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.cal-deposit { color: var(--income); }
+.cal-withdrawal { color: var(--expense); }
+.cal-balance {
+  margin-top: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.cal-dot {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.piggy-calendar-hint { margin-top: var(--space-3); font-size: var(--text-xs); color: var(--text-faint); }
+
+.piggy-kv { margin: 0; display: flex; flex-direction: column; }
+.piggy-kv > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.piggy-kv > div:last-child { border-bottom: 0; }
+.piggy-kv dt { color: var(--text-muted); font-size: var(--text-sm); }
+.piggy-kv dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.piggy-kv dd.positive { color: var(--income); }
+.piggy-kv dd.negative { color: var(--expense); }
+.piggy-kv .total { padding-top: var(--space-3); }
+.piggy-kv .total dd { font-size: var(--text-md); }
+
+.piggy-progress { margin-top: var(--space-4); }
+.piggy-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.piggy-progress .progress { margin-bottom: var(--space-2); }
+
+.piggy-contributors { display: flex; flex-direction: column; gap: var(--space-3); }
+.piggy-person { display: flex; align-items: center; gap: var(--space-3); }
+.piggy-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-bold);
+}
+.piggy-avatar.me { background: var(--income-soft); color: var(--income); }
+.piggy-avatar.her { background: var(--expense-soft); color: var(--expense); }
+.piggy-person-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.piggy-person-main strong { font-size: var(--text-sm); }
+.piggy-person-main span { font-size: var(--text-xs); color: var(--text-faint); }
+.piggy-person-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.piggy-person-side .num { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.piggy-person-month { font-size: var(--text-xs); color: var(--text-muted); }
+.piggy-person-month.positive { color: var(--income); }
+.piggy-person-month.negative { color: var(--expense); }
+
+.piggy-toolbar { margin-bottom: var(--space-2); }
+.piggy-type-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-1);
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.piggy-type-tag.deposit { background: var(--income-soft); color: var(--income); }
+.piggy-type-tag.withdrawal { background: var(--expense-soft); color: var(--expense); }
+
+.piggy-fieldset { margin-bottom: var(--space-4); }
+.piggy-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.piggy-form-grid .field { margin-bottom: 0; }
+
+@media (max-width: 559px) {
+  .cal-day { min-height: 48px; padding: var(--space-1); }
+  .cal-balance { display: none; }
+  .cal-values { font-size: 9px; }
+  .piggy-form-grid { grid-template-columns: 1fr; }
+}
+
+.piggy-banner {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft-border);
+}
+.piggy-banner .alert-icon { color: var(--accent); }

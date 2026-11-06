@@ -370,6 +370,13 @@ def dashboard():
 
     recent = db.recent_transactions(8)
 
+    try:
+        piggy_overview = db.piggy_overview()
+    except Exception:  # noqa: BLE001 - the piggy banner must never break the dashboard
+        app.logger.exception("could not load the piggy bank overview")
+        db.db.session.rollback()
+        piggy_overview = None
+
     # Income vs expenses, one point per month for the last six months.
     series_start = date(last_six_months()[0][0], last_six_months()[0][1], 1).isoformat()
     rows = db.monthly_series(series_start)
@@ -395,6 +402,7 @@ def dashboard():
         budget_overview=budget_overview,
         budget_alerts=alerts,
         recent=recent,
+        piggy=piggy_overview,
         chart_labels=chart_labels,
         chart_periods=chart_periods,
         series_income=series_income,
@@ -961,6 +969,241 @@ def restore_category(category_id):
     }
     response.update(_category_action_urls(category_id))
     return jsonify(**response)
+
+
+# ---------------------------------------------------------------------------
+# piggy bank
+# ---------------------------------------------------------------------------
+
+def _piggy_payload():
+    return request.get_json(silent=True) or request.form
+
+
+def _piggy_failure(message, month=None, status=400, code=None):
+    month = month or _budget_month()
+    if _is_json_request():
+        payload = {"ok": False, "error": message, "month": month}
+        if code:
+            payload["code"] = code
+        return jsonify(payload), status
+    flash(message, "error")
+    return redirect(url_for("piggy", month=month))
+
+
+def _piggy_ok(message, month=None, **extra):
+    month = month or _budget_month()
+    if _is_json_request():
+        payload = {"ok": True, "message": message, "month": month}
+        payload.update(extra)
+        return jsonify(payload)
+    flash(message, "success")
+    return redirect(url_for("piggy", month=month))
+
+
+def _piggy_entry_action(action, label, success_message, month=None):
+    """Shared JSON/redirect wrapper for piggy entry writes."""
+    try:
+        result = action()
+    except db.DuplicatePiggyDepositError as exc:
+        return _piggy_failure(str(exc), month, 409, code="duplicate_deposit")
+    except db.PiggyBalanceError as exc:
+        return _piggy_failure(str(exc), month, 409, code="insufficient_balance")
+    except db.PiggyNotFoundError as exc:
+        return _piggy_failure(str(exc), month, 404, code="not_found")
+    except db.PiggyValidationError as exc:
+        return _piggy_failure(str(exc), month, 400, code="invalid")
+    except db.SaveError as exc:
+        return _piggy_failure(
+            f"Could not save the {label} - your change was NOT saved. {exc}.",
+            month,
+            500,
+            code="not_saved",
+        )
+    except Exception:  # noqa: BLE001 - never a bare 500 for a save
+        app.logger.exception("failed to save piggy %s", label)
+        db.db.session.rollback()
+        return _piggy_failure(
+            f"Could not save the {label} - your change was NOT saved. "
+            "Please check the database connection and try again.",
+            month,
+            500,
+            code="not_saved",
+        )
+    return _piggy_ok(success_message, month, **(result or {}))
+
+
+@app.route("/piggy")
+def piggy():
+    month = _budget_month()
+    contributor = request.args.get("contributor") or "all"
+    entry_type = request.args.get("type") or "all"
+    summary = db.piggy_summary(month)
+    entries = db.list_piggy_entries(
+        month=month,
+        contributor=contributor,
+        entry_type=entry_type,
+        newest_first=True,
+    )
+    return render_template(
+        "piggy.html",
+        summary=summary,
+        entries=entries,
+        deleted=db.list_deleted_piggy_entries(),
+        series=db.piggy_month_series(month),
+        month=summary["month_value"],
+        month_label=summary["month_label"],
+        previous_month=summary["previous_month"],
+        next_month=summary["next_month"],
+        contributor=contributor,
+        entry_type=entry_type,
+        today=date.today().isoformat(),
+    )
+
+
+@app.route("/piggy/entries/add", methods=["POST"])
+def add_piggy_entry():
+    if not _csrf_ok():
+        return _csrf_error()
+    payload = _piggy_payload()
+    month = _budget_month(payload.get("month"))
+    kind = str(payload.get("entry_type") or "deposit")
+    result = _piggy_entry_action(
+        lambda: {
+            "entry": db.add_piggy_entry(
+                payload.get("contributor"),
+                kind,
+                payload.get("amount"),
+                payload.get("entry_date"),
+                payload.get("note"),
+                allow_duplicate=_as_bool(payload.get("allow_duplicate")),
+            )
+        },
+        "entry",
+        "Deposit saved." if kind == "deposit" else "Withdrawal saved.",
+        month,
+    )
+    return result
+
+
+@app.route("/piggy/entries/<entry_id>/edit", methods=["POST"])
+def edit_piggy_entry(entry_id):
+    if not _csrf_ok():
+        return _csrf_error()
+    payload = _piggy_payload()
+    month = _budget_month(payload.get("month"))
+    return _piggy_entry_action(
+        lambda: {
+            "entry": db.update_piggy_entry(
+                entry_id,
+                contributor=payload.get("contributor"),
+                entry_type=payload.get("entry_type"),
+                amount=payload.get("amount"),
+                entry_date=payload.get("entry_date"),
+                note=payload.get("note"),
+                allow_duplicate=_as_bool(payload.get("allow_duplicate")),
+            )
+        },
+        "entry",
+        "Entry updated.",
+        month,
+    )
+
+
+@app.route("/piggy/entries/<entry_id>/delete", methods=["POST"])
+def delete_piggy_entry(entry_id):
+    if not _csrf_ok():
+        return _csrf_error()
+    month = _budget_month(_piggy_payload().get("month"))
+    return _piggy_entry_action(
+        lambda: {"deleted": db.delete_piggy_entry(entry_id)},
+        "deletion",
+        "Entry moved to Recently deleted. You can undo this.",
+        month,
+    )
+
+
+@app.route("/piggy/entries/<entry_id>/undo", methods=["POST"])
+def undo_piggy_entry(entry_id):
+    if not _csrf_ok():
+        return _csrf_error()
+    month = _budget_month(_piggy_payload().get("month"))
+    return _piggy_entry_action(
+        lambda: {"restored": db.undo_delete_piggy_entry(entry_id)},
+        "undo",
+        "Entry restored.",
+        month,
+    )
+
+
+@app.route("/piggy/settings", methods=["POST"])
+def update_piggy_settings():
+    if not _csrf_ok():
+        return _csrf_error()
+    payload = _piggy_payload()
+    month = _budget_month(payload.get("month"))
+    try:
+        bank = db.update_piggy_settings(
+            name=payload.get("name"),
+            daily_amount=payload.get("daily_amount"),
+            contributor_me=payload.get("contributor_me"),
+            contributor_her=payload.get("contributor_her"),
+        )
+    except db.PiggyValidationError as exc:
+        return _piggy_failure(str(exc), month, 400, code="invalid")
+    except db.SaveError as exc:
+        return _piggy_failure(
+            f"Could not save the settings - your change was NOT saved. {exc}.",
+            month,
+            500,
+            code="not_saved",
+        )
+    except Exception:  # noqa: BLE001
+        app.logger.exception("failed to save piggy settings")
+        db.db.session.rollback()
+        return _piggy_failure(
+            "Could not save the settings - your change was NOT saved. "
+            "Please check the database connection and try again.",
+            month,
+            500,
+            code="not_saved",
+        )
+    return _piggy_ok("Piggy bank settings saved.", month, bank=bank)
+
+
+@app.route("/piggy/export.csv")
+def export_piggy_csv():
+    """Download the visible piggy entries as CSV (never touches transactions)."""
+    month = request.args.get("month") or None
+    contributor = request.args.get("contributor") or "all"
+    entry_type = request.args.get("type") or "all"
+    rows = db.list_piggy_entries(
+        month=month,
+        contributor=contributor,
+        entry_type=entry_type,
+        newest_first=False,
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(["date", "contributor", "type", "amount", "note", "created_at"])
+    for entry in rows:
+        writer.writerow(
+            [
+                entry["entry_date"],
+                entry["contributor_name"],
+                entry["entry_type"],
+                entry["amount"],
+                entry["note"],
+                entry["created_at"],
+            ]
+        )
+    stamp = date.today().strftime("%Y%m%d")
+    return Response(
+        buffer.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="piggy_{stamp}.csv"'
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
