@@ -1427,3 +1427,11 @@ body.modal-open { overflow: hidden; }
   .main { margin: 0; padding: 0; }
   .card { box-shadow: none; break-inside: avoid; }
 }
+
+/* piggy statement options */
+.piggy-statement-menu{position:relative;}
+.piggy-statement-menu>summary{list-style:none;cursor:pointer;}
+.piggy-statement-menu>summary::-webkit-details-marker{display:none;}
+.piggy-statement-options{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:360px;max-width:420px;padding:12px;display:grid;gap:8px;}
+.piggy-statement-options .form-grid{gap:8px;}
+.piggy-statement-options .check{display:flex;gap:8px;align-items:center;font-size:13px;}

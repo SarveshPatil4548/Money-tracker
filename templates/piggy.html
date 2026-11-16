@@ -27,9 +27,64 @@
         <a class="btn btn-secondary" href="{{ url_for('export_piggy_csv', month=month, contributor=contributor, type=entry_type) }}">
             <i data-lucide="file-spreadsheet"></i> CSV
         </a>
-        <a class="btn btn-secondary" href="{{ url_for('export_piggy_pdf', month=month) }}">
-            <i data-lucide="file-text"></i> PDF
-        </a>
+        <details class="piggy-statement-menu">
+            <summary class="btn btn-secondary"><i data-lucide="file-text"></i> PDF statement</summary>
+            <div class="piggy-statement-options card" data-statement-options>
+                <div class="form-grid piggy-form-grid">
+                    <div class="field">
+                        <label for="stmt-month">Month</label>
+                        <input type="month" class="input" id="stmt-month" value="{{ month }}">
+                    </div>
+                    <div class="field">
+                        <label for="stmt-contributor">Contributor</label>
+                        <select class="select" id="stmt-contributor">
+                            <option value="all">Both</option>
+                            <option value="me">{{ summary.bank.contributor_me }}</option>
+                            <option value="her">{{ summary.bank.contributor_her }}</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-grid piggy-form-grid">
+                    <div class="field">
+                        <label for="stmt-from">From <span class="hint">optional range</span></label>
+                        <input type="date" class="input" id="stmt-from">
+                    </div>
+                    <div class="field">
+                        <label for="stmt-to">To <span class="hint">optional range</span></label>
+                        <input type="date" class="input" id="stmt-to">
+                    </div>
+                </div>
+                <div class="form-grid piggy-form-grid">
+                    <div class="field">
+                        <label for="stmt-theme">Theme</label>
+                        <select class="select" id="stmt-theme">
+                            <option value="color">Colour</option>
+                            <option value="bw">Black &amp; white</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="stmt-detail">Detail</label>
+                        <select class="select" id="stmt-detail">
+                            <option value="detailed">Detailed</option>
+                            <option value="compact">Compact</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="stmt-content">Content</label>
+                    <select class="select" id="stmt-content">
+                        <option value="both">Calendar + entries</option>
+                        <option value="calendar">Calendar only</option>
+                        <option value="entries">Entries only</option>
+                    </select>
+                </div>
+                <label class="check"><input type="checkbox" id="stmt-missed" checked> Highlight missed days</label>
+                <div class="actions" style="margin-top:8px;">
+                    <button type="button" class="btn btn-secondary" data-statement-action="preview"><i data-lucide="eye"></i> Preview</button>
+                    <button type="button" class="btn" data-statement-action="download"><i data-lucide="download"></i> Generate &amp; save</button>
+                </div>
+            </div>
+        </details>
         <button type="button" class="icon-btn" data-piggy-print
                 aria-label="Print this page" title="Print">
             <i data-lucide="printer"></i>
@@ -321,11 +376,11 @@
         <li class="txn-row">
             <span class="txn-icon"><i data-lucide="file-text"></i></span>
             <div class="txn-main">
-                <div class="txn-title">{{ s.period_start[:7] }} statement</div>
+                <div class="txn-title">{{ s.statement_number }} · {{ s.period_start }} to {{ s.period_end }}</div>
                 <div class="txn-note">
                     {{ s.entry_count }} entr{{ 'y' if s.entry_count == 1 else 'ies' }}
                     · closing {{ s.closing_balance|inr }}
-                    · saved {{ s.generated_at[:10] }}
+                    · saved {{ s.generated_at[:10] if s.generated_at else '' }}
                 </div>
             </div>
             <div class="txn-side">

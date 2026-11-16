@@ -1209,360 +1209,182 @@ def export_piggy_csv():
         },
     )
 
-
 # ---------------------------------------------------------------------------
-# piggy bank PDF statements
+# piggy bank PDF statements (redesigned)
 # ---------------------------------------------------------------------------
 
-_PIGGY_FONT_CACHE = None
+
+def _piggy_statement_options(args):
+    """Parse statement generation options from query/form args."""
+    theme = str((args.get("theme") or "color")).strip().lower()
+    if theme not in ("color", "bw", "black_white", "black-and-white", "mono", "grayscale", "print"):
+        theme = "color"
+    detail = str((args.get("detail") or "detailed")).strip().lower()
+    if detail not in ("compact", "detailed"):
+        detail = "detailed"
+    include_entries_raw = args.get("include_entries")
+    if include_entries_raw is None:
+        include_entries = detail != "compact"
+    else:
+        include_entries = _as_bool(include_entries_raw)
+    if detail == "compact":
+        include_entries = False
+    preview = _as_bool(args.get("preview"))
+    contributor = (args.get("contributor") or "all").strip() or "all"
+    if contributor not in ("me", "her", "all"):
+        contributor = "all"
+    month = _budget_month(args.get("month")) if args.get("month") else None
+    date_from = (args.get("from") or args.get("date_from") or "").strip() or None
+    date_to = (args.get("to") or args.get("date_to") or "").strip() or None
+    # if explicit range provided, prefer it; else use month
+    if not date_from and not date_to and not month:
+        month = _budget_month()
+    include_calendar = _as_bool(args.get("include_calendar", "1"))
+    # "Calendar only / Calendar + entries"
+    content_mode = str((args.get("content_mode") or args.get("calendar_mode") or "both")).strip().lower()
+    if content_mode in ("calendar", "calendar_only", "calendar-only"):
+        include_calendar = True
+        include_entries = False
+    elif content_mode in ("entries", "entries_only", "entries-only"):
+        include_calendar = False
+    highlight_missed = _as_bool(args.get("highlight_missed", "1"))
+    return {
+        "theme": "bw" if theme in ("bw", "black_white", "black-and-white", "mono", "grayscale", "print") else "color",
+        "detail": detail,
+        "include_entries": include_entries,
+        "include_calendar": include_calendar,
+        "highlight_missed": highlight_missed,
+        "preview": preview,
+        "contributor": contributor,
+        "month": month,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
 
 
-def _piggy_pdf_fonts():
-    """Register an embedded TrueType font that can draw the rupee sign.
-
-    Returns ``(regular_name, bold_name, has_rupee)``. Every candidate is
-    embedded into the PDF, so the statement looks the same anywhere. If no
-    suitable font is found the built-in Helvetica pair is used and amounts
-    fall back to an ``Rs`` prefix.
-    """
-    global _PIGGY_FONT_CACHE
-    if _PIGGY_FONT_CACHE is not None:
-        return _PIGGY_FONT_CACHE
-
-    fallback = ("Helvetica", "Helvetica-Bold", False)
-    try:
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-    except Exception:  # noqa: BLE001 - reportlab may not be installed
-        _PIGGY_FONT_CACHE = fallback
-        return _PIGGY_FONT_CACHE
-
-    candidates = [
-        (
-            BASE_DIR / "static" / "fonts" / "DejaVuSans.ttf",
-            BASE_DIR / "static" / "fonts" / "DejaVuSans-Bold.ttf",
-        ),
-        (
-            Path(r"C:\Windows\Fonts\arial.ttf"),
-            Path(r"C:\Windows\Fonts\arialbd.ttf"),
-        ),
-        (
-            Path(r"C:\Windows\Fonts\segoeui.ttf"),
-            Path(r"C:\Windows\Fonts\segoeuib.ttf"),
-        ),
-        (
-            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-        ),
-        (
-            Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
-            Path("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"),
-        ),
-        (
-            Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
-            None,
-        ),
-    ]
-
-    for regular, bold in candidates:
-        try:
-            if not regular.exists():
-                continue
-            face = TTFont("PiggySans", str(regular))
-            if 0x20B9 not in face.face.charToGlyph:
-                continue
-            pdfmetrics.registerFont(face)
-            bold_name = "PiggySans"
-            if bold is not None and Path(bold).exists():
-                pdfmetrics.registerFont(TTFont("PiggySans-Bold", str(bold)))
-                bold_name = "PiggySans-Bold"
-            pdfmetrics.registerFontFamily(
-                "PiggySans",
-                normal="PiggySans",
-                bold=bold_name,
-                italic="PiggySans",
-                boldItalic=bold_name,
-            )
-            _PIGGY_FONT_CACHE = ("PiggySans", bold_name, True)
-            return _PIGGY_FONT_CACHE
-        except Exception:  # noqa: BLE001 - try the next candidate
-            continue
-
-    _PIGGY_FONT_CACHE = fallback
-    return _PIGGY_FONT_CACHE
-
-
-def _pdf_money(value, symbol):
-    try:
-        amount = Decimal(str(value))
-    except Exception:  # noqa: BLE001
-        amount = Decimal("0")
-    return f"{symbol}{amount:,.2f}"
-
-
-def _statement_period(month):
+def _resolve_statement_period(opts):
+    from datetime import datetime as _dt
+    if opts.get("date_from") or opts.get("date_to"):
+        start = opts.get("date_from") or opts.get("date_to")
+        end = opts.get("date_to") or opts.get("date_from")
+        ps = _dt.strptime(str(start)[:10], "%Y-%m-%d").date()
+        pe = _dt.strptime(str(end)[:10], "%Y-%m-%d").date()
+        if pe < ps:
+            ps, pe = pe, ps
+        label = f"{ps:%d %b %Y} – {pe:%d %b %Y}"
+        return ps, pe, label
+    month = opts.get("month") or _budget_month()
     first = date.fromisoformat(str(month)[:7] + "-01")
     if first.month == 12:
         next_first = date(first.year + 1, 1, 1)
     else:
         next_first = date(first.year, first.month + 1, 1)
-    return first, next_first - timedelta(days=1)
+    last = next_first - timedelta(days=1)
+    return first, last, first.strftime("%B %Y")
 
 
-def _build_piggy_statement_pdf(summary, entries, period_start, period_end, reference):
-    from xml.sax.saxutils import escape
-
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
-    regular, bold, has_rupee = _piggy_pdf_fonts()
-    symbol = "\u20b9" if has_rupee else "Rs "
-    bank = summary["bank"]
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        leftMargin=16 * mm,
-        rightMargin=16 * mm,
-        topMargin=16 * mm,
-        bottomMargin=16 * mm,
-        title=f"{bank['name']} - {summary['month_label']}",
-        author="MoneyWise",
-        subject="Piggy bank statement",
+def _collect_statement_data(opts):
+    """Collect entries/totals for statement period & filters. Hash is over returned entries."""
+    bank = db.ensure_piggy_bank()
+    ps, pe, label = _resolve_statement_period(opts)
+    contributor = opts.get("contributor") or "all"
+    # entries in period (all contributors for totals context?) - respect contributor filter for statement view/totals
+    entries = db.list_piggy_entries(
+        date_from=ps.isoformat(),
+        date_to=pe.isoformat(),
+        contributor=contributor,
+        newest_first=False,
     )
+    # opening/closing for filtered scope: compute from all entries up to boundaries for same contributor scope
+    all_rows = db.list_piggy_entries(contributor=contributor, newest_first=False)
+    opening = Decimal("0.00")
+    closing = Decimal("0.00")
+    tdep = Decimal("0.00")
+    twd = Decimal("0.00")
+    for e in all_rows:
+        d = date.fromisoformat(str(e["entry_date"])[:10])
+        amt = Decimal(str(e["amount"]))
+        signed = amt if e["entry_type"] == "deposit" else -amt
+        if d < ps:
+            opening += signed
+        if d <= pe:
+            closing += signed
+        if ps <= d <= pe:
+            if e["entry_type"] == "deposit":
+                tdep += amt
+            else:
+                twd += amt
+    # multi-month summary if spans > 1 month
+    multi = []
+    if (pe.year, pe.month) != (ps.year, ps.month):
+        # iterate months in span
+        cur = date(ps.year, ps.month, 1)
+        endm = date(pe.year, pe.month, 1)
+        from datetime import timedelta as _td
+        def _month_end(d):
+            if d.month == 12: return date(d.year, 12, 31)
+            return date(d.year, d.month + 1, 1) - _td(days=1)
+        while cur <= endm:
+            ms = max(ps, cur)
+            me = min(pe, _month_end(cur))
+            mdep = Decimal("0.00"); mwd = Decimal("0.00"); mclose = Decimal("0.00")
+            for e in all_rows:
+                d = date.fromisoformat(str(e["entry_date"])[:10])
+                amt = Decimal(str(e["amount"]))
+                signed = amt if e["entry_type"] == "deposit" else -amt
+                if d <= me:
+                    mclose += signed
+                if ms <= d <= me:
+                    if e["entry_type"] == "deposit": mdep += amt
+                    else: mwd += amt
+            multi.append({"label": cur.strftime("%b %Y"), "month": cur.strftime("%Y-%m"), "deposits": str(mdep), "withdrawals": str(mwd), "net": str(mdep-mwd), "closing": str(mclose)})
+            if cur.month == 12: cur = date(cur.year+1,1,1)
+            else: cur = date(cur.year, cur.month+1,1)
+    # statement number
+    statement_no = db.next_piggy_statement_number(pe.year)
+    bank_data = db.get_piggy_bank() or {"name": "Piggy Bank", "contributor_me": "Me", "contributor_her": "Her"}
+    return {
+        "bank": bank_data,
+        "period_start": ps,
+        "period_end": pe,
+        "period_label": label,
+        "statement_no": statement_no,
+        "opening_balance": f"{opening:.2f}",
+        "closing_balance": f"{closing:.2f}",
+        "total_deposits": f"{tdep:.2f}",
+        "total_withdrawals": f"{twd:.2f}",
+        "entry_count": len(entries),
+        "entries": entries,
+        "multi_month_summary": multi,
+        "contributor": contributor,
+        "daily_target": str(bank_data.get("daily_amount") or "0"),
+    }
 
-    styles = getSampleStyleSheet()
-    base = ParagraphStyle(
-        "PiggyBase",
-        parent=styles["Normal"],
-        fontName=regular,
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor("#1f2937"),
-    )
-    small = ParagraphStyle(
-        "PiggySmall",
-        parent=base,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor("#6b7280"),
-    )
-    title = ParagraphStyle(
-        "PiggyTitle",
-        parent=styles["Title"],
-        fontName=bold,
-        fontSize=19,
-        leading=23,
-        alignment=0,
-        textColor=colors.HexColor("#111827"),
-        spaceAfter=2,
-    )
-    subtitle = ParagraphStyle(
-        "PiggySubtitle",
-        parent=base,
-        fontSize=11,
-        leading=14,
-        textColor=colors.HexColor("#4f46e5"),
-    )
-    heading = ParagraphStyle(
-        "PiggyHeading",
-        parent=base,
-        fontName=bold,
-        fontSize=11,
-        leading=14,
-        textColor=colors.HexColor("#111827"),
-        spaceBefore=8,
-        spaceAfter=4,
-    )
-    cell = ParagraphStyle("PiggyCell", parent=base, fontSize=8.5, leading=11)
-    cell_right = ParagraphStyle("PiggyCellRight", parent=cell, alignment=2)
-    cell_head = ParagraphStyle(
-        "PiggyCellHead",
-        parent=cell,
-        fontName=bold,
-        textColor=colors.white,
-    )
 
-    story = [
-        Paragraph(escape(bank["name"]), title),
-        Paragraph(f"Piggy bank statement &middot; {escape(summary['month_label'])}", subtitle),
-        Spacer(1, 4 * mm),
-    ]
-
-    meta = Table(
-        [
-            [
-                Paragraph("Period", small),
-                Paragraph(
-                    f"{period_start:%d %b %Y} &ndash; {period_end:%d %b %Y}", base
-                ),
-                Paragraph("Reference", small),
-                Paragraph(escape(reference), base),
-            ],
-            [
-                Paragraph("Generated", small),
-                Paragraph(date.today().strftime("%d %b %Y"), base),
-                Paragraph("Currency", small),
-                Paragraph("INR", base),
-            ],
-        ],
-        colWidths=[22 * mm, 55 * mm, 24 * mm, 45 * mm],
+def _build_piggy_statement_pdf_new(data, opts, statement_file_hash=""):
+    from piggy_statement_pdf import build_statement_pdf
+    from datetime import datetime as _dt
+    return build_statement_pdf(
+        bank=data["bank"],
+        period_label=data["period_label"],
+        period_start=data["period_start"],
+        period_end=data["period_end"],
+        statement_no=data["statement_no"],
+        generated_at=_dt.now(),
+        opening_balance=data["opening_balance"],
+        closing_balance=data["closing_balance"],
+        total_deposits=data["total_deposits"],
+        total_withdrawals=data["total_withdrawals"],
+        entries=data["entries"],
+        include_entries=opts.get("include_entries", True),
+        include_calendar=opts.get("include_calendar", True),
+        highlight_missed=opts.get("highlight_missed", True),
+        daily_target=data.get("daily_target"),
+        detail=opts.get("detail", "detailed"),
+        theme_name=opts.get("theme", "color"),
+        contributor_filter=data.get("contributor"),
+        statement_file_hash=statement_file_hash or "",
     )
-    meta.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 1),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]
-        )
-    )
-    story.append(meta)
-
-    story.append(Paragraph("Summary", heading))
-    summary_rows = [
-        ["Opening balance", _pdf_money(summary["opening_balance"], symbol)],
-        ["Deposits this period", "+" + _pdf_money(summary["month_deposits"], symbol)],
-        [
-            "Withdrawals this period",
-            "-" + _pdf_money(summary["month_withdrawals"], symbol),
-        ],
-        ["Closing balance", _pdf_money(summary["closing_balance"], symbol)],
-        ["Entries this period", str(summary["month_entry_count"])],
-    ]
-    summary_table = Table(summary_rows, colWidths=[70 * mm, 45 * mm], hAlign="LEFT")
-    summary_table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), regular),
-                ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-                ("FONTNAME", (0, 3), (-1, 3), bold),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#e5e7eb")),
-                ("LINEABOVE", (0, -1), (-1, -1), 0.5, colors.HexColor("#9ca3af")),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]
-        )
-    )
-    story.append(summary_table)
-
-    buckets = {}
-    for entry in entries:
-        bucket = buckets.setdefault(
-            entry["contributor_name"],
-            {"deposits": Decimal("0"), "withdrawals": Decimal("0")},
-        )
-        if entry["entry_type"] == "deposit":
-            bucket["deposits"] += Decimal(str(entry["amount"]))
-        else:
-            bucket["withdrawals"] += Decimal(str(entry["amount"]))
-
-    if buckets:
-        story.append(Paragraph("Contributors this period", heading))
-        contributor_rows = [["Contributor", "Deposits", "Withdrawals", "Net"]]
-        for name, bucket in buckets.items():
-            net = bucket["deposits"] - bucket["withdrawals"]
-            contributor_rows.append(
-                [
-                    name,
-                    _pdf_money(bucket["deposits"], symbol),
-                    _pdf_money(bucket["withdrawals"], symbol),
-                    _pdf_money(net, symbol),
-                ]
-            )
-        contributor_table = Table(
-            contributor_rows,
-            colWidths=[65 * mm, 35 * mm, 35 * mm, 35 * mm],
-            hAlign="LEFT",
-        )
-        contributor_table.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), regular),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("FONTNAME", (0, 0), (-1, 0), bold),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2ff")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#3730a3")),
-                    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ]
-            )
-        )
-        story.append(contributor_table)
-
-    story.append(Paragraph("Entries", heading))
-    if entries:
-        entry_rows = [
-            [
-                Paragraph("Date", cell_head),
-                Paragraph("Contributor", cell_head),
-                Paragraph("Type", cell_head),
-                Paragraph("Amount", cell_head),
-                Paragraph("Note", cell_head),
-            ]
-        ]
-        for entry in entries:
-            kind = "Deposit" if entry["entry_type"] == "deposit" else "Withdrawal"
-            sign = "+" if entry["entry_type"] == "deposit" else "-"
-            entry_rows.append(
-                [
-                    Paragraph(escape(entry["entry_date"]), cell),
-                    Paragraph(escape(entry["contributor_name"]), cell),
-                    Paragraph(kind, cell),
-                    Paragraph(sign + _pdf_money(entry["amount"], symbol), cell_right),
-                    Paragraph(escape(entry["note"] or "-"), cell),
-                ]
-            )
-        entries_table = Table(
-            entry_rows,
-            colWidths=[20 * mm, 30 * mm, 22 * mm, 28 * mm, 76 * mm],
-            repeatRows=1,
-        )
-        entries_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
-                    (
-                        "ROWBACKGROUNDS",
-                        (0, 1),
-                        (-1, -1),
-                        [colors.white, colors.HexColor("#f9fafb")],
-                    ),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ]
-            )
-        )
-        story.append(entries_table)
-    else:
-        story.append(Paragraph("No piggy-bank entries in this period.", base))
-
-    story.append(Spacer(1, 5 * mm))
-    story.append(
-        Paragraph(
-            "The piggy bank is kept separate from income, expenses, budgets and "
-            "the main account balance. The SHA-256 hash of this PDF is stored with "
-            "the statement so its integrity can be checked later.",
-            small,
-        )
-    )
-    story.append(Paragraph(f"Statement reference: {escape(reference)}", small))
-
-    doc.build(story)
-    return buffer.getvalue()
 
 
 def _statement_path(file_path):
@@ -1581,30 +1403,53 @@ def _statement_path(file_path):
 
 @app.route("/piggy/statement.pdf")
 def export_piggy_pdf():
-    """Generate, store and download a PDF statement for one month."""
-    month = _budget_month(request.args.get("month"))
-    summary = db.piggy_summary(month)
-    entries = db.list_piggy_entries(month=month, newest_first=False)
-    period_start, period_end = _statement_period(summary["month"])
-    reference = secrets.token_hex(8)
-    file_name = f"piggy_statement_{summary['month_value']}_{reference}.pdf"
+    """Generate (or preview) a piggy-bank PDF statement with filters/options."""
+    opts = _piggy_statement_options(request.args)
+    try:
+        data = _collect_statement_data(opts)
+    except Exception:  # noqa: BLE001
+        app.logger.exception("could not collect piggy statement data")
+        if opts["preview"] or _is_json_request():
+            return jsonify(ok=False, error="Could not prepare statement data."), 500
+        flash("Could not prepare the statement data.", "error")
+        return redirect(url_for("piggy", month=_budget_month(request.args.get("month"))))
 
     try:
-        pdf_bytes = _build_piggy_statement_pdf(
-            summary, entries, period_start, period_end, reference
-        )
+        pdf_bytes = _build_piggy_statement_pdf_new(data, opts, statement_file_hash="")
     except Exception:  # noqa: BLE001 - never a bare 500
         app.logger.exception("could not build the piggy bank PDF statement")
-        if _is_json_request():
+        if opts["preview"] or _is_json_request():
             return jsonify(ok=False, error="Could not create the PDF statement."), 500
         flash(
             "Could not create the PDF statement. Make sure ReportLab is installed "
             "(pip install -r requirements.txt).",
             "error",
         )
-        return redirect(url_for("piggy", month=month))
+        return redirect(url_for("piggy", month=_budget_month(request.args.get("month"))))
 
     digest = hashlib.sha256(pdf_bytes).hexdigest()
+    # inject file hash into verification box by rebuilding once (hash of final bytes stored)
+    try:
+        pdf_bytes = _build_piggy_statement_pdf_new(data, opts, statement_file_hash=digest)
+        digest = hashlib.sha256(pdf_bytes).hexdigest()
+    except Exception:  # noqa: BLE001
+        pass
+
+    stamp = data["period_end"].strftime("%Y%m%d")
+    safe_no = data["statement_no"].replace("/", "-")
+    base_name = f"{safe_no}_{stamp}"
+
+    if opts["preview"]:
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{base_name}_preview.pdf"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    file_name = f"{base_name}_{secrets.token_hex(4)}.pdf"
     STATEMENTS_DIR.mkdir(parents=True, exist_ok=True)
     target = STATEMENTS_DIR / file_name
     temp_target = target.with_name(target.name + ".tmp")
@@ -1613,17 +1458,18 @@ def export_piggy_pdf():
 
     try:
         db.save_piggy_statement(
-            period_start=period_start,
-            period_end=period_end,
-            opening_balance=summary["opening_balance"],
-            closing_balance=summary["closing_balance"],
-            total_deposits=summary["month_deposits"],
-            total_withdrawals=summary["month_withdrawals"],
-            entry_count=summary["month_entry_count"],
+            period_start=data["period_start"],
+            period_end=data["period_end"],
+            opening_balance=data["opening_balance"],
+            closing_balance=data["closing_balance"],
+            total_deposits=data["total_deposits"],
+            total_withdrawals=data["total_withdrawals"],
+            entry_count=data["entry_count"],
             file_name=file_name,
             file_path=file_name,
             file_sha256=digest,
         )
+        # store statement number hint by renaming? no, keep file_name; we derive number from year+id; better embed in filename prefix already done
     except Exception:  # noqa: BLE001
         app.logger.exception("could not record the piggy bank PDF statement")
         try:
@@ -1633,7 +1479,7 @@ def export_piggy_pdf():
         if _is_json_request():
             return jsonify(ok=False, error="Could not save the PDF statement record."), 500
         flash("Could not save the PDF statement record - the file was discarded.", "error")
-        return redirect(url_for("piggy", month=month))
+        return redirect(url_for("piggy", month=_budget_month(request.args.get("month"))))
 
     return Response(
         pdf_bytes,
@@ -1698,6 +1544,7 @@ def verify_piggy_statement(statement_id):
         file_name=statement["file_name"],
         generated_at=statement["generated_at"],
         entry_count=statement["entry_count"],
+        statement_number=statement.get("statement_number"),
     )
 
 

@@ -3285,10 +3285,23 @@ def piggy_overview():
     }
 
 
+def _piggy_statement_number_from_row(row):
+    """Derive PB-YYYY-NNNN from stored filename/metadata (no schema change)."""
+    name = str(getattr(row, "file_name", "") or "")
+    m = re.search(r"(PB-\d{4}-\d{4})", name)
+    if m:
+        return m.group(1)
+    generated = getattr(row, "generated_at", None)
+    year = generated.year if generated else date.today().year
+    sid = int(getattr(row, "id", 0) or 0)
+    return f"PB-{year}-{sid:04d}"
+
+
 def serialize_piggy_statement(row):
     return {
         "id": str(row.id),
         "piggy_bank_id": str(row.piggy_bank_id),
+        "statement_number": _piggy_statement_number_from_row(row),
         "period_start": row.period_start.isoformat() if row.period_start else "",
         "period_end": row.period_end.isoformat() if row.period_end else "",
         "opening_balance": str(_q2(row.opening_balance)),
@@ -3302,6 +3315,25 @@ def serialize_piggy_statement(row):
         "generated_at": row.generated_at.isoformat() if row.generated_at else "",
         "deleted_at": row.deleted_at.isoformat() if row.deleted_at else "",
     }
+
+
+def next_piggy_statement_number(year=None):
+    """Return next PB-YYYY-NNNN for the given year (computed, no schema change)."""
+    year = int(year or date.today().year)
+    bank = ensure_piggy_bank()
+    rows = db.session.execute(
+        select(PiggyStatement).where(
+            PiggyStatement.piggy_bank_id == bank.id,
+            PiggyStatement.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    max_seq = 0
+    pattern = re.compile(rf"^PB-{year}-(\d{{4}})$")
+    for row in rows:
+        m = pattern.match(_piggy_statement_number_from_row(row))
+        if m:
+            max_seq = max(max_seq, int(m.group(1)))
+    return f"PB-{year}-{max_seq + 1:04d}"
 
 
 def save_piggy_statement(
@@ -3385,6 +3417,7 @@ __all__ = [
     "PIGGY_MIN_AMOUNT",
     "PIGGY_CONTRIBUTORS",
     "PIGGY_ENTRY_TYPES",
+    "next_piggy_statement_number",
     "db",
     "User",
     "Category",

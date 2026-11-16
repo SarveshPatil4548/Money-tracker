@@ -19,6 +19,42 @@
     });
   }
 
+  /* ---------- statement preview / generate ---------- */
+  function buildStatementUrl(preview) {
+    var params = new URLSearchParams();
+    var month = document.getElementById("stmt-month");
+    var from = document.getElementById("stmt-from");
+    var to = document.getElementById("stmt-to");
+    var contributor = document.getElementById("stmt-contributor");
+    var theme = document.getElementById("stmt-theme");
+    var detail = document.getElementById("stmt-detail");
+    var content = document.getElementById("stmt-content");
+    var missed = document.getElementById("stmt-missed");
+    if (from && from.value) params.set("from", from.value);
+    if (to && to.value) params.set("to", to.value);
+    if ((!from || !from.value) && (!to || !to.value) && month && month.value) params.set("month", month.value);
+    if (contributor && contributor.value && contributor.value !== "all") params.set("contributor", contributor.value);
+    if (theme && theme.value) params.set("theme", theme.value);
+    if (detail && detail.value) params.set("detail", detail.value);
+    if (content && content.value) params.set("content_mode", content.value);
+    params.set("highlight_missed", (missed && missed.checked) ? "1" : "0");
+    if (preview) params.set("preview", "1");
+    return "/piggy/statement.pdf?" + params.toString();
+  }
+
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest && event.target.closest("[data-statement-action]");
+    if (!btn) return;
+    event.preventDefault();
+    var action = btn.getAttribute("data-statement-action");
+    var url = buildStatementUrl(action === "preview");
+    if (action === "preview") {
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+    window.location.href = url;
+  });
+
   /* ---------- entry dialog prefill / reset ---------- */
   var entryForm = document.getElementById("piggy-entry-form");
   var entryDialog = document.getElementById("piggy-entry-dialog");
